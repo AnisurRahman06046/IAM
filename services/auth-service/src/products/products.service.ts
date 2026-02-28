@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product, ProductStatus } from '../database/entities/product.entity';
@@ -12,9 +13,13 @@ import { ConflictException, NotFoundException } from '../common/exceptions/domai
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
+// SECURITY: Reserved slugs that conflict with existing routes
+const RESERVED_SLUGS = ['admin', 'api', 'auth', 'health', 'docs', 'platform', 'tenants', 'users'];
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
+  private readonly kcBaseUrl: string;
 
   constructor(
     @InjectRepository(Product)
@@ -24,12 +29,18 @@ export class ProductsService {
     private readonly keycloak: KeycloakAdminService,
     private readonly gateway: GatewayService,
     private readonly audit: AuditService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.kcBaseUrl = this.config.get<string>('keycloak.baseUrl') || 'http://localhost:8080';
+  }
 
   async create(dto: CreateProductDto, actor: RequestUser, ip?: string): Promise<Product> {
-    // 1. Validate slug uniqueness in DB
+    // 1. Validate slug uniqueness in DB + reserved words
+    if (RESERVED_SLUGS.includes(dto.slug)) {
+      throw new ConflictException(`Slug '${dto.slug}' is reserved and cannot be used`);
+    }
     const existing = await this.productRepo.findOneBy({ slug: dto.slug });
-    if (existing) throw new ConflictException(`Product with slug '${dto.slug}' already exists`);
+    if (existing) throw new ConflictException(`A product with this slug already exists`);
 
     let publicClientUuid: string | undefined;
     let backendClientUuid: string | undefined;
@@ -100,7 +111,7 @@ export class ProductsService {
       if (dto.backendUrl && dto.backendPort) {
         try {
           const routeId = `product-${dto.slug}`;
-          const kcBaseUrl = 'http://localhost:8080';
+          const kcBaseUrl = this.kcBaseUrl;
           const routeConfig = this.gateway.buildProductRouteConfig({
             slug: dto.slug,
             backendHost: dto.backendUrl,
@@ -180,7 +191,12 @@ export class ProductsService {
     const product = await this.productRepo.findOneBy({ id });
     if (!product) throw new NotFoundException('Product', id);
 
-    Object.assign(product, dto);
+    // SECURITY: Whitelist only safe fields to prevent mass assignment
+    if (dto.name !== undefined) product.name = dto.name;
+    if (dto.description !== undefined) product.description = dto.description;
+    if (dto.frontendUrl !== undefined) product.frontendUrl = dto.frontendUrl;
+    if (dto.backendUrl !== undefined) product.backendUrl = dto.backendUrl;
+    if (dto.backendPort !== undefined) product.backendPort = dto.backendPort;
     const updated = await this.productRepo.save(product);
 
     await this.audit.log({
@@ -340,7 +356,7 @@ export class ProductsService {
         slug: product.slug,
         backendHost: product.backendUrl,
         backendPort: product.backendPort,
-        kcDiscovery: 'http://localhost:8080/realms/doer/.well-known/openid-configuration',
+        kcDiscovery: `${this.kcBaseUrl}/realms/doer/.well-known/openid-configuration`,
         oidcClientId: product.kcBackendClientId,
         oidcClientSecret: product.kcBackendClientSecret,
       });

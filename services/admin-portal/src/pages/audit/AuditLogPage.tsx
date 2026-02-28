@@ -26,8 +26,8 @@ export function AuditLogPage() {
     platformApi
       .getAuditLogs(params)
       .then((res) => {
-        setLogs(res.items);
-        setTotal(res.total);
+        setLogs(res?.items || []);
+        setTotal(res?.meta?.total || res?.total || 0);
       })
       .catch((err) => message.error(err.message))
       .finally(() => setLoading(false));

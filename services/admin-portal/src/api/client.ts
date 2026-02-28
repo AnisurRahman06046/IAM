@@ -1,11 +1,48 @@
-import { getAccessToken } from "../auth/token-storage";
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "../auth/token-storage";
 
 const APISIX_BASE = "http://localhost:9080";
+const CLIENT_ID = "doer-admin";
 
-export async function apiCall<T = unknown>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  try {
+    const resp = await fetch(`${APISIX_BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken, clientId: CLIENT_ID }),
+    });
+    if (!resp.ok) {
+      clearTokens();
+      return false;
+    }
+    const raw = await resp.json();
+    const tokens = raw.data || raw;
+    if (!tokens.accessToken) {
+      clearTokens();
+      return false;
+    }
+    setTokens(tokens.accessToken, tokens.refreshToken);
+    return true;
+  } catch {
+    clearTokens();
+    return false;
+  }
+}
+
+function refreshOnce(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = tryRefreshToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+async function doFetch<T>(path: string, options: RequestInit): Promise<Response> {
   const token = getAccessToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -14,11 +51,26 @@ export async function apiCall<T = unknown>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
+  return fetch(`${APISIX_BASE}${path}`, { ...options, headers });
+}
 
-  const resp = await fetch(`${APISIX_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+export async function apiCall<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  let resp = await doFetch<T>(path, options);
+
+  // Auto-refresh on 401
+  if (resp.status === 401) {
+    const refreshed = await refreshOnce();
+    if (refreshed) {
+      resp = await doFetch<T>(path, options);
+    } else {
+      // Redirect to login
+      window.location.href = "/login";
+      throw new ApiError(401, "Session expired. Please login again.");
+    }
+  }
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));

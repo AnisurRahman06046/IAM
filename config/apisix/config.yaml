@@ -20,8 +20,9 @@ deployment:
       - name: admin
         key: doer_apisix_admin_key_2026
         role: admin
+    # SECURITY: Restrict admin API to localhost only
     allow_admin:
-      - 0.0.0.0/0  # Restrict in production
+      - 127.0.0.1/32
 
   etcd:
     host:

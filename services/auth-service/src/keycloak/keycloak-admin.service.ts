@@ -114,6 +114,7 @@ export class KeycloakAdminService implements OnModuleInit {
     firstName?: string;
     lastName?: string;
     enabled?: boolean;
+    emailVerified?: boolean;
     credentials?: { type: string; value: string; temporary?: boolean }[];
     attributes?: Record<string, string[]>;
   }): Promise<string> {
@@ -389,6 +390,32 @@ export class KeycloakAdminService implements OnModuleInit {
       return location.split('/').pop()!;
     } catch (err) {
       this.mapError(err as AxiosError, 'Organization');
+    }
+  }
+
+  async searchOrganizations(search: string): Promise<Record<string, unknown>[]> {
+    try {
+      const headers = await this.adminHeaders();
+      const { data } = await firstValueFrom(
+        this.http.get(`${this.adminUrl}/organizations`, {
+          headers,
+          params: { search },
+        }),
+      );
+      return data;
+    } catch (err) {
+      this.mapError(err as AxiosError, 'Organization search');
+    }
+  }
+
+  async deleteOrganization(orgId: string): Promise<void> {
+    try {
+      const headers = await this.adminHeaders();
+      await firstValueFrom(
+        this.http.delete(`${this.adminUrl}/organizations/${orgId}`, { headers }),
+      );
+    } catch (err) {
+      this.mapError(err as AxiosError, 'Organization delete');
     }
   }
 

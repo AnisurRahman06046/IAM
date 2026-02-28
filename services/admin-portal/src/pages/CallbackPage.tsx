@@ -36,8 +36,9 @@ export function CallbackPage() {
         if (!resp.ok) throw new Error(`Token exchange failed: ${resp.status}`);
         return resp.json();
       })
-      .then((data) => {
-        setTokens(data.access_token, data.refresh_token);
+      .then((resp) => {
+        const tokens = resp.data || resp;
+        setTokens(tokens.accessToken, tokens.refreshToken);
         sessionStorage.removeItem("pkce_verifier");
         window.history.replaceState({}, "", "/");
         window.location.href = "/";

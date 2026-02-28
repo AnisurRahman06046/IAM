@@ -8,8 +8,10 @@ import { ActorType } from '../database/entities/audit-log.entity';
 import { KeycloakAdminService } from '../keycloak/keycloak-admin.service';
 import { AuditService } from '../audit/audit.service';
 import {
+  ForbiddenException,
   NotFoundException,
   TenantLimitExceededException,
+  ValidationException,
 } from '../common/exceptions/domain-exceptions';
 import { RequestUser } from '../common/interfaces/jwt-payload.interface';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -29,10 +31,31 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
+  // SECURITY: Role hierarchy — higher index = higher privilege
+  private static readonly ROLE_HIERARCHY = ['end_user', 'tenant_employee', 'tenant_admin', 'platform_admin'];
+
   private async getTenant(tid: string): Promise<Tenant> {
     const tenant = await this.tenantRepo.findOneBy({ id: tid });
     if (!tenant) throw new NotFoundException('Tenant', tid);
     return tenant;
+  }
+
+  /**
+   * SECURITY: Prevent privilege escalation — actor cannot assign roles
+   * at or above their own level.
+   */
+  private validateRoleHierarchy(actorRoles: string[], targetRole: string): void {
+    const actorMaxLevel = Math.max(
+      ...actorRoles.map((r) => UsersService.ROLE_HIERARCHY.indexOf(r)).filter((i) => i >= 0),
+      -1,
+    );
+    const targetLevel = UsersService.ROLE_HIERARCHY.indexOf(targetRole);
+    if (targetLevel < 0) {
+      throw new ValidationException(`Invalid realm role: ${targetRole}`);
+    }
+    if (targetLevel >= actorMaxLevel) {
+      throw new ForbiddenException('Cannot assign a role at or above your own level');
+    }
   }
 
   async createUser(
@@ -62,6 +85,8 @@ export class UsersService {
       attributes: dto.phone ? { phone: [dto.phone] } : undefined,
     });
 
+    // SECURITY: Validate role hierarchy before assignment
+    this.validateRoleHierarchy(actor.realmRoles, dto.realmRole);
     await this.keycloak.assignRealmRoles(userId, [dto.realmRole]);
 
     if (tenant.keycloakOrgId) {
@@ -127,7 +152,14 @@ export class UsersService {
   ): Promise<void> {
     const tenant = await this.getTenant(tid);
 
+    // SECURITY: Prevent self-role-modification
+    if (uid === actor.id) {
+      throw new ForbiddenException('Cannot modify your own roles');
+    }
+
     if (dto.realmRole) {
+      // SECURITY: Validate role hierarchy
+      this.validateRoleHierarchy(actor.realmRoles, dto.realmRole);
       await this.keycloak.assignRealmRoles(uid, [dto.realmRole]);
     }
 

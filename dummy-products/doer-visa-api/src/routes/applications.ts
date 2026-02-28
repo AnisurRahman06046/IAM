@@ -4,6 +4,17 @@ import * as store from "../store/applications.js";
 
 export const applicationRoutes = Router();
 
+// GET /api/visa/me — return user identity as seen by the backend (from APISIX headers)
+applicationRoutes.get("/me", requireAuth, (req, res) => {
+  res.json({
+    id: req.user!.id,
+    email: req.user!.email,
+    realmRoles: req.user!.realmRoles,
+    clientRoles: req.user!.clientRoles,
+    organizationId: req.user!.organizationId || null,
+  });
+});
+
 // POST /api/visa/applications — create a new application
 applicationRoutes.post(
   "/applications",
@@ -45,7 +56,6 @@ applicationRoutes.get("/applications", requireAuth, (req, res) => {
   if (canViewAll) {
     res.json(store.findByOrg(req.user!.organizationId));
   } else {
-    // view_own_status or no specific view role — only own applications
     res.json(store.findByOrgAndUser(req.user!.organizationId, req.user!.id));
   }
 });
@@ -57,7 +67,6 @@ applicationRoutes.get("/applications/:id", requireAuth, (req, res) => {
     res.status(404).json({ error: "Application not found" });
     return;
   }
-  // view_own_status users can only see their own
   const roles = req.user!.clientRoles;
   const canViewAll =
     roles.includes("view_applications") ||
@@ -81,6 +90,10 @@ applicationRoutes.put(
       res.status(404).json({ error: "Application not found" });
       return;
     }
+    if (app.status !== "submitted") {
+      res.status(400).json({ error: `Cannot process application in '${app.status}' status` });
+      return;
+    }
     const updated = store.updateStatus(app.id, "processing");
     res.json(updated);
   },
@@ -97,7 +110,56 @@ applicationRoutes.put(
       res.status(404).json({ error: "Application not found" });
       return;
     }
+    if (app.status !== "processing") {
+      res.status(400).json({ error: `Cannot approve application in '${app.status}' status` });
+      return;
+    }
     const updated = store.updateStatus(app.id, "approved");
     res.json(updated);
+  },
+);
+
+// PUT /api/visa/applications/:id/reject — set status to "rejected"
+applicationRoutes.put(
+  "/applications/:id/reject",
+  requireAuth,
+  requireRole("approve_visa", "manage_all"),
+  (req, res) => {
+    const app = store.findById(req.params.id as string);
+    if (!app || app.organizationId !== req.user!.organizationId) {
+      res.status(404).json({ error: "Application not found" });
+      return;
+    }
+    if (app.status !== "submitted" && app.status !== "processing") {
+      res.status(400).json({ error: `Cannot reject application in '${app.status}' status` });
+      return;
+    }
+    const updated = store.updateStatus(app.id, "rejected");
+    res.json(updated);
+  },
+);
+
+// DELETE /api/visa/applications/:id — delete own submitted application
+applicationRoutes.delete(
+  "/applications/:id",
+  requireAuth,
+  (req, res) => {
+    const app = store.findById(req.params.id as string);
+    if (!app || app.organizationId !== req.user!.organizationId) {
+      res.status(404).json({ error: "Application not found" });
+      return;
+    }
+    const isOwner = app.userId === req.user!.id;
+    const isAdmin = req.user!.clientRoles.includes("manage_all");
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({ error: "Can only delete your own applications" });
+      return;
+    }
+    if (!isAdmin && app.status !== "submitted") {
+      res.status(400).json({ error: "Can only delete applications in 'submitted' status" });
+      return;
+    }
+    store.deleteApplication(app.id);
+    res.status(204).send();
   },
 );

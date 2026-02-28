@@ -18,6 +18,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateClientRoleDto } from './dto/create-client-role.dto';
 import { CreateCompositeRoleDto } from './dto/create-composite-role.dto';
 import { UpdateRouteDto } from './dto/update-route.dto';
+import { ProductResponseDto } from './dto/product-response.dto';
 
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -28,45 +29,51 @@ export class ProductsController {
 
   @Post()
   @ApiOperation({ summary: 'Create product (full onboarding orchestration)' })
-  create(
+  async create(
     @Body() dto: CreateProductDto,
     @CurrentUser() user: RequestUser,
     @Ip() ip: string,
   ) {
-    return this.productsService.create(dto, user, ip);
+    // SECURITY: Strip secrets from response
+    const product = await this.productsService.create(dto, user, ip);
+    return ProductResponseDto.from(product);
   }
 
   @Get()
   @ApiOperation({ summary: 'List all products' })
-  findAll() {
-    return this.productsService.findAll();
+  async findAll() {
+    const products = await this.productsService.findAll();
+    return ProductResponseDto.fromMany(products);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get product detail' })
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(id);
+  async findOne(@Param('id') id: string) {
+    const product = await this.productsService.findOne(id);
+    return ProductResponseDto.from(product);
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update product metadata' })
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
     @CurrentUser() user: RequestUser,
     @Ip() ip: string,
   ) {
-    return this.productsService.update(id, dto, user, ip);
+    const product = await this.productsService.update(id, dto, user, ip);
+    return ProductResponseDto.from(product);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Deactivate product' })
-  deactivate(
+  async deactivate(
     @Param('id') id: string,
     @CurrentUser() user: RequestUser,
     @Ip() ip: string,
   ) {
-    return this.productsService.deactivate(id, user, ip);
+    const product = await this.productsService.deactivate(id, user, ip);
+    return ProductResponseDto.from(product);
   }
 
   // ─── Client Roles ───────────────────────────────────────

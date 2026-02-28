@@ -11,6 +11,7 @@ import { ProductListPage } from "./pages/products/ProductListPage";
 import { ProductCreatePage } from "./pages/products/ProductCreatePage";
 import { ProductDetailPage } from "./pages/products/ProductDetailPage";
 import { TenantListPage } from "./pages/tenants/TenantListPage";
+import { TenantCreatePage } from "./pages/tenants/TenantCreatePage";
 import { TenantDetailPage } from "./pages/tenants/TenantDetailPage";
 import { AuditLogPage } from "./pages/audit/AuditLogPage";
 
@@ -40,6 +41,7 @@ export function App() {
             <Route path="/products/new" element={<ProductCreatePage />} />
             <Route path="/products/:id" element={<ProductDetailPage />} />
             <Route path="/tenants" element={<TenantListPage />} />
+            <Route path="/tenants/new" element={<TenantCreatePage />} />
             <Route path="/tenants/:id" element={<TenantDetailPage />} />
             <Route path="/audit" element={<AuditLogPage />} />
           </Route>

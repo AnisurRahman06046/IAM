@@ -33,8 +33,9 @@ export function CallbackPage() {
         if (!resp.ok) throw new Error(`Token exchange failed: ${resp.status}`);
         return resp.json();
       })
-      .then((data) => {
-        setTokens(data.access_token, data.refresh_token);
+      .then((raw) => {
+        const tokens = raw.data || raw;
+        setTokens(tokens.accessToken || tokens.access_token, tokens.refreshToken || tokens.refresh_token);
         sessionStorage.removeItem("pkce_verifier");
         // Clean URL and navigate to dashboard
         window.history.replaceState({}, "", window.location.pathname);

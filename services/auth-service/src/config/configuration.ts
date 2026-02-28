@@ -8,7 +8,7 @@ export default () => ({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     username: process.env.DB_USERNAME || 'doer_auth_user',
-    password: process.env.DB_PASSWORD || 'doer_auth_pass',
+    password: process.env.DB_PASSWORD || '',
     database: process.env.DB_DATABASE || 'doer_auth',
   },
   redis: {
@@ -24,6 +24,7 @@ export default () => ({
   },
   apisix: {
     adminUrl: process.env.APISIX_ADMIN_URL || 'http://localhost:9180',
-    adminKey: process.env.APISIX_ADMIN_KEY || 'doer_apisix_admin_key_2026',
+    // SECURITY: No default for admin key — must be set via environment
+    adminKey: process.env.APISIX_ADMIN_KEY || '',
   },
 });

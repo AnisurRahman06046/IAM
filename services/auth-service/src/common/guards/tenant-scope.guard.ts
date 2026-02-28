@@ -2,7 +2,7 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  Inject,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Repository } from 'typeorm';
@@ -10,10 +10,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ForbiddenException, UnauthorizedException } from '../exceptions/domain-exceptions';
 import { RequestUser } from '../interfaces/jwt-payload.interface';
-import { Tenant } from '../../database/entities/tenant.entity';
+import { Tenant, TenantStatus } from '../../database/entities/tenant.entity';
 
 @Injectable()
 export class TenantScopeGuard implements CanActivate {
+  private readonly logger = new Logger(TenantScopeGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     @InjectRepository(Tenant)
@@ -48,7 +50,14 @@ export class TenantScopeGuard implements CanActivate {
       throw new ForbiddenException('You do not have access to this tenant');
     }
 
+    // SECURITY: Reject access to inactive/suspended tenants
+    if (tenant.status !== TenantStatus.ACTIVE) {
+      this.logger.warn(`User ${user.id} attempted access to inactive tenant ${tenantId}`);
+      throw new ForbiddenException('This tenant is currently inactive');
+    }
+
     if (user.organizationId !== tenant.alias) {
+      this.logger.warn(`User ${user.id} denied access to tenant ${tenantId} (org mismatch)`);
       throw new ForbiddenException(
         'You do not have access to this tenant',
       );

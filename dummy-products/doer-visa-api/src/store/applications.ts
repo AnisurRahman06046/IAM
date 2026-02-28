@@ -50,3 +50,7 @@ export function updateStatus(
   app.updatedAt = new Date().toISOString();
   return app;
 }
+
+export function deleteApplication(id: string): boolean {
+  return store.delete(id);
+}

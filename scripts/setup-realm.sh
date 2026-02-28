@@ -1,9 +1,16 @@
 #!/bin/bash
 #
-# Doer IAM — Phase 2: Keycloak Realm Configuration
+# Doer IAM — Keycloak Realm Setup (Platform Infrastructure Only)
 #
-# Configures the "doer" realm with all clients, roles, scopes, and organizations
-# via the Keycloak Admin REST API.
+# Creates the "doer" realm with:
+#   - Realm roles, password policy, brute force protection
+#   - doer-auth-svc (service account for Auth Service → Keycloak admin API)
+#   - doer-admin (public PKCE client for Admin Portal UI)
+#   - Organization scope + organizations enabled
+#   - OTP policy
+#
+# Product clients (doer-visa, doer-school, etc.) are NOT created here —
+# those are created via the Admin Portal UI.
 #
 # Prerequisites: Keycloak running at localhost:8080 with admin/admin credentials
 #
@@ -80,9 +87,9 @@ get_token
 pass "Admin token obtained"
 
 # ─────────────────────────────────────────────
-# 2.1 — CREATE DOER REALM
+# 1 — CREATE DOER REALM
 # ─────────────────────────────────────────────
-section "2.1 — Create 'doer' realm"
+section "1 — Create 'doer' realm"
 
 STATUS=$(kc_api_status GET "/admin/realms/${REALM}")
 if [ "$STATUS" = "200" ]; then
@@ -108,11 +115,10 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.2 — CONFIGURE REALM SETTINGS (Token lifetimes, sessions, etc.)
+# 2 — CONFIGURE REALM SETTINGS
 # ─────────────────────────────────────────────
-section "2.2 — Configure realm settings"
+section "2 — Configure realm settings"
 
-# Refresh token to avoid expiry during long setup
 get_token
 
 STATUS=$(kc_api_status PUT "/admin/realms/${REALM}" '{
@@ -143,9 +149,9 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.3 — CONFIGURE PASSWORD POLICIES
+# 3 — CONFIGURE PASSWORD POLICIES
 # ─────────────────────────────────────────────
-section "2.3 — Configure password policies"
+section "3 — Configure password policies"
 
 STATUS=$(kc_api_status PUT "/admin/realms/${REALM}" '{
   "passwordPolicy": "length(8) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and passwordHistory(3)"
@@ -158,9 +164,9 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.4 — ENABLE BRUTE FORCE PROTECTION
+# 4 — ENABLE BRUTE FORCE PROTECTION
 # ─────────────────────────────────────────────
-section "2.4 — Enable brute force protection"
+section "4 — Enable brute force protection"
 
 STATUS=$(kc_api_status PUT "/admin/realms/${REALM}" '{
   "bruteForceProtected": true,
@@ -179,12 +185,12 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.5 — CREATE REALM ROLES
+# 5 — CREATE REALM ROLES
 # ─────────────────────────────────────────────
-section "2.5 — Create realm roles"
+section "5 — Create realm roles"
 
 declare -A REALM_ROLES=(
-  ["platform_admin"]="Doer platform administrator — full system access"
+  ["platform_admin"]="Platform administrator — full system access"
   ["tenant_admin"]="Tenant organization administrator — manages users and settings within their org"
   ["tenant_employee"]="Tenant organization employee — operational access within their org"
   ["end_user"]="Self-registered end user/customer"
@@ -206,20 +212,17 @@ for ROLE_NAME in "${!REALM_ROLES[@]}"; do
 done
 
 # ─────────────────────────────────────────────
-# 2.6 — SET DEFAULT REALM ROLE
+# 6 — SET DEFAULT REALM ROLE
 # ─────────────────────────────────────────────
-section "2.6 — Set 'end_user' as default realm role"
+section "6 — Set 'end_user' as default realm role"
 
-# Get the default-roles composite role
 DEFAULT_ROLES=$(kc_api GET "/admin/realms/${REALM}/roles/default-roles-${REALM}")
 DEFAULT_ROLES_ID=$(echo "$DEFAULT_ROLES" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || true)
 
-# Get end_user role
 END_USER_ROLE=$(kc_api GET "/admin/realms/${REALM}/roles/end_user")
 END_USER_ROLE_ID=$(echo "$END_USER_ROLE" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || true)
 
 if [ -n "$DEFAULT_ROLES_ID" ] && [ -n "$END_USER_ROLE_ID" ]; then
-  # Add end_user to default roles composites
   STATUS=$(kc_api_status POST "/admin/realms/${REALM}/roles-by-id/${DEFAULT_ROLES_ID}/composites" "[{
     \"id\": \"${END_USER_ROLE_ID}\",
     \"name\": \"end_user\"
@@ -230,171 +233,20 @@ if [ -n "$DEFAULT_ROLES_ID" ] && [ -n "$END_USER_ROLE_ID" ]; then
     info "Default role may already include 'end_user' (HTTP $STATUS)"
   fi
 else
-  info "Could not find default-roles or end_user role, skipping default role assignment"
+  info "Could not find default-roles or end_user role, skipping"
 fi
 
 # Refresh token
 get_token
 
 # ─────────────────────────────────────────────
-# 2.7 — CREATE CLIENT: doer-visa (Public, Auth Code + PKCE)
+# 7 — CREATE CLIENT: doer-auth-svc (Service Account)
 # ─────────────────────────────────────────────
-section "2.7 — Create client: doer-visa (public, PKCE)"
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients" '{
-  "clientId": "doer-visa",
-  "name": "Doer Visa Application",
-  "description": "Frontend client for Doer Visa product",
-  "enabled": true,
-  "publicClient": true,
-  "standardFlowEnabled": true,
-  "directAccessGrantsEnabled": false,
-  "serviceAccountsEnabled": false,
-  "redirectUris": ["http://localhost:3001/callback", "http://localhost:3001/*"],
-  "webOrigins": ["http://localhost:3001"],
-  "attributes": {
-    "pkce.code.challenge.method": "S256",
-    "post.logout.redirect.uris": "http://localhost:3001/*"
-  },
-  "protocol": "openid-connect",
-  "fullScopeAllowed": false
-}')
-
-if [ "$STATUS" = "201" ]; then
-  pass "Client 'doer-visa' created (public, PKCE S256)"
-elif [ "$STATUS" = "409" ]; then
-  info "Client 'doer-visa' already exists"
-else
-  fail "Failed to create client 'doer-visa' (HTTP $STATUS)"
-fi
-
-# ─────────────────────────────────────────────
-# 2.8 — CREATE CLIENT: doer-visa-backend (Confidential, Resource Server)
-# ─────────────────────────────────────────────
-section "2.8 — Create client: doer-visa-backend (confidential)"
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients" '{
-  "clientId": "doer-visa-backend",
-  "name": "Doer Visa Backend Service",
-  "description": "Confidential client for APISIX JWT validation of Doer Visa APIs",
-  "enabled": true,
-  "publicClient": false,
-  "standardFlowEnabled": false,
-  "directAccessGrantsEnabled": false,
-  "serviceAccountsEnabled": false,
-  "bearerOnly": true,
-  "protocol": "openid-connect"
-}')
-
-if [ "$STATUS" = "201" ]; then
-  pass "Client 'doer-visa-backend' created (confidential, bearer-only)"
-elif [ "$STATUS" = "409" ]; then
-  info "Client 'doer-visa-backend' already exists"
-else
-  fail "Failed to create client 'doer-visa-backend' (HTTP $STATUS)"
-fi
-
-# ─────────────────────────────────────────────
-# 2.9 — CREATE CLIENT ROLES FOR doer-visa
-# ─────────────────────────────────────────────
-section "2.9 — Create client roles for doer-visa"
-
-# Get doer-visa client UUID
-VISA_CLIENT_UUID=$(kc_api GET "/admin/realms/${REALM}/clients?clientId=doer-visa" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
-
-if [ -z "$VISA_CLIENT_UUID" ]; then
-  fail "Could not find doer-visa client UUID"
-fi
-
-declare -A VISA_ROLES=(
-  ["manage_all"]="Full access to all Doer Visa features — tenant admin level"
-  ["manage_applications"]="Create, edit, delete visa applications"
-  ["process_visa"]="Process and review visa applications"
-  ["approve_visa"]="Approve or reject visa applications"
-  ["view_applications"]="View visa applications (read-only)"
-  ["apply_visa"]="Submit new visa applications (end user)"
-  ["view_own_status"]="View own application status (end user)"
-)
-
-for ROLE_NAME in "${!VISA_ROLES[@]}"; do
-  ROLE_DESC="${VISA_ROLES[$ROLE_NAME]}"
-  STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles" "{
-    \"name\": \"${ROLE_NAME}\",
-    \"description\": \"${ROLE_DESC}\"
-  }")
-  if [ "$STATUS" = "201" ]; then
-    pass "Client role: doer-visa/${ROLE_NAME}"
-  elif [ "$STATUS" = "409" ]; then
-    info "Client role 'doer-visa/${ROLE_NAME}' already exists"
-  else
-    fail "Failed to create client role '${ROLE_NAME}' (HTTP $STATUS)"
-  fi
-done
-
-# ─────────────────────────────────────────────
-# 2.10 — CREATE COMPOSITE ROLES (Presets) FOR doer-visa
-# ─────────────────────────────────────────────
-section "2.10 — Create composite roles (presets) for doer-visa"
-
-# Refresh token
-get_token
-
-# Get all doer-visa client roles
-get_visa_role_id() {
-  local ROLE_NAME="$1"
-  kc_api GET "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles/${ROLE_NAME}" | python3 -c "import sys,json; r=json.load(sys.stdin); print(json.dumps({'id':r['id'],'name':r['name']}))"
-}
-
-# staff_basic = [view_applications, view_own_status]
-VIEW_APPS=$(get_visa_role_id "view_applications")
-VIEW_OWN=$(get_visa_role_id "view_own_status")
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles" '{
-  "name": "staff_basic",
-  "description": "Basic staff preset: view applications and own status",
-  "composite": true
-}')
-if [ "$STATUS" = "201" ] || [ "$STATUS" = "409" ]; then
-  # Add composites
-  kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles/staff_basic/composites" "[${VIEW_APPS},${VIEW_OWN}]" > /dev/null 2>&1
-  pass "Composite role: doer-visa/staff_basic = [view_applications, view_own_status]"
-fi
-
-# staff_senior = [view_applications, process_visa, manage_applications]
-PROCESS=$(get_visa_role_id "process_visa")
-MANAGE_APPS=$(get_visa_role_id "manage_applications")
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles" '{
-  "name": "staff_senior",
-  "description": "Senior staff preset: view, process, and manage applications",
-  "composite": true
-}')
-if [ "$STATUS" = "201" ] || [ "$STATUS" = "409" ]; then
-  kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles/staff_senior/composites" "[${VIEW_APPS},${PROCESS},${MANAGE_APPS}]" > /dev/null 2>&1
-  pass "Composite role: doer-visa/staff_senior = [view_applications, process_visa, manage_applications]"
-fi
-
-# customer = [apply_visa, view_own_status]
-APPLY=$(get_visa_role_id "apply_visa")
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles" '{
-  "name": "customer",
-  "description": "Customer preset: apply for visa and view own status",
-  "composite": true
-}')
-if [ "$STATUS" = "201" ] || [ "$STATUS" = "409" ]; then
-  kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles/customer/composites" "[${APPLY},${VIEW_OWN}]" > /dev/null 2>&1
-  pass "Composite role: doer-visa/customer = [apply_visa, view_own_status]"
-fi
-
-# ─────────────────────────────────────────────
-# 2.11 — CREATE CLIENT: doer-auth-svc (Confidential, Service Account)
-# ─────────────────────────────────────────────
-section "2.11 — Create client: doer-auth-svc (service account)"
+section "7 — Create client: doer-auth-svc (service account)"
 
 STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients" '{
   "clientId": "doer-auth-svc",
-  "name": "Doer Auth Service",
+  "name": "Auth Service",
   "description": "Confidential client for Auth Service to call Keycloak Admin REST API",
   "enabled": true,
   "publicClient": false,
@@ -413,24 +265,17 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.12 — ASSIGN SERVICE ACCOUNT ROLES TO doer-auth-svc
+# 8 — ASSIGN SERVICE ACCOUNT ROLES
 # ─────────────────────────────────────────────
-section "2.12 — Assign service account roles to doer-auth-svc"
+section "8 — Assign service account roles to doer-auth-svc"
 
-# Refresh token
 get_token
 
-# Get doer-auth-svc client UUID
 AUTH_SVC_UUID=$(kc_api GET "/admin/realms/${REALM}/clients?clientId=doer-auth-svc" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
-
-# Get the service account user
 SA_USER=$(kc_api GET "/admin/realms/${REALM}/clients/${AUTH_SVC_UUID}/service-account-user")
 SA_USER_ID=$(echo "$SA_USER" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-
-# Get realm-management client UUID (built-in client for admin operations)
 REALM_MGMT_UUID=$(kc_api GET "/admin/realms/${REALM}/clients?clientId=realm-management" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
 
-# Get the needed roles from realm-management
 ADMIN_ROLES_NEEDED=("manage-users" "manage-clients" "view-users" "view-clients" "manage-realm")
 
 ROLES_JSON="["
@@ -451,20 +296,20 @@ ROLES_JSON+="]"
 
 STATUS=$(kc_api_status POST "/admin/realms/${REALM}/users/${SA_USER_ID}/role-mappings/clients/${REALM_MGMT_UUID}" "$ROLES_JSON")
 if [ "$STATUS" = "204" ]; then
-  pass "Service account roles assigned: manage-users, manage-clients, view-users, view-clients, manage-realm"
+  pass "Service account roles: manage-users, manage-clients, view-users, view-clients, manage-realm"
 else
   info "Service account roles may already be assigned (HTTP $STATUS)"
 fi
 
 # ─────────────────────────────────────────────
-# 2.13 — CREATE CLIENT: doer-admin (Public, Admin Panel)
+# 9 — CREATE CLIENT: doer-admin (Admin Portal UI)
 # ─────────────────────────────────────────────
-section "2.13 — Create client: doer-admin (public, PKCE)"
+section "9 — Create client: doer-admin (public, PKCE)"
 
 STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients" '{
   "clientId": "doer-admin",
-  "name": "Doer Admin Panel",
-  "description": "Frontend client for Doer Admin Dashboard",
+  "name": "Admin Portal",
+  "description": "Frontend client for Admin Portal Dashboard",
   "enabled": true,
   "publicClient": true,
   "standardFlowEnabled": true,
@@ -489,11 +334,10 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.14 — CREATE CLIENT SCOPE: organization
+# 10 — CREATE CLIENT SCOPE: organization
 # ─────────────────────────────────────────────
-section "2.14 — Create client scope: organization"
+section "10 — Create client scope: organization"
 
-# Refresh token
 get_token
 
 STATUS=$(kc_api_status POST "/admin/realms/${REALM}/client-scopes" '{
@@ -511,10 +355,9 @@ if [ "$STATUS" = "201" ]; then
 elif [ "$STATUS" = "409" ]; then
   info "Client scope 'organization' already exists"
 else
-  info "Client scope creation returned HTTP $STATUS (may already exist with different mechanism)"
+  info "Client scope creation returned HTTP $STATUS (may already exist)"
 fi
 
-# Get the organization scope UUID
 ORG_SCOPE_UUID=$(kc_api GET "/admin/realms/${REALM}/client-scopes" | python3 -c "
 import sys, json
 scopes = json.load(sys.stdin)
@@ -525,7 +368,6 @@ for s in scopes:
 " 2>/dev/null || true)
 
 if [ -n "$ORG_SCOPE_UUID" ]; then
-  # Add a protocol mapper for organization membership
   STATUS=$(kc_api_status POST "/admin/realms/${REALM}/client-scopes/${ORG_SCOPE_UUID}/protocol-mappers/models" '{
     "name": "organization",
     "protocol": "openid-connect",
@@ -541,40 +383,91 @@ if [ -n "$ORG_SCOPE_UUID" ]; then
   if [ "$STATUS" = "201" ]; then
     pass "Organization membership mapper added to scope"
   else
-    info "Organization mapper may already exist or mapper type differs (HTTP $STATUS)"
+    info "Organization mapper may already exist (HTTP $STATUS)"
   fi
 fi
 
 # ─────────────────────────────────────────────
-# 2.15 — ADD ORGANIZATION SCOPE TO PRODUCT CLIENTS
+# 11 — ADD ORGANIZATION SCOPE TO doer-admin CLIENT
 # ─────────────────────────────────────────────
-section "2.15 — Add 'organization' scope to product clients"
+section "11 — Add 'organization' scope to doer-admin"
 
 ADMIN_CLIENT_UUID=$(kc_api GET "/admin/realms/${REALM}/clients?clientId=doer-admin" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
 
-if [ -n "$ORG_SCOPE_UUID" ]; then
-  for CLIENT_NAME in "doer-visa" "doer-admin"; do
-    if [ "$CLIENT_NAME" = "doer-visa" ]; then CID=$VISA_CLIENT_UUID; else CID=$ADMIN_CLIENT_UUID; fi
-    # Remove from optional scopes first (Keycloak may auto-add it there)
-    kc_api_status DELETE "/admin/realms/${REALM}/clients/${CID}/optional-client-scopes/${ORG_SCOPE_UUID}" > /dev/null 2>&1
-    # Add to default scopes
-    STATUS=$(kc_api_status PUT "/admin/realms/${REALM}/clients/${CID}/default-client-scopes/${ORG_SCOPE_UUID}")
-    if [ "$STATUS" = "204" ]; then
-      pass "Added 'organization' as DEFAULT scope to ${CLIENT_NAME}"
-    else
-      info "Organization scope for ${CLIENT_NAME} (HTTP $STATUS)"
-    fi
-  done
+if [ -n "$ORG_SCOPE_UUID" ] && [ -n "$ADMIN_CLIENT_UUID" ]; then
+  kc_api_status DELETE "/admin/realms/${REALM}/clients/${ADMIN_CLIENT_UUID}/optional-client-scopes/${ORG_SCOPE_UUID}" > /dev/null 2>&1
+  STATUS=$(kc_api_status PUT "/admin/realms/${REALM}/clients/${ADMIN_CLIENT_UUID}/default-client-scopes/${ORG_SCOPE_UUID}")
+  if [ "$STATUS" = "204" ]; then
+    pass "Added 'organization' as DEFAULT scope to doer-admin"
+  else
+    info "Organization scope for doer-admin (HTTP $STATUS)"
+  fi
 else
-  info "Organization scope UUID not found, skipping client scope assignment"
+  info "Organization scope UUID or admin client not found, skipping"
 fi
 
 # ─────────────────────────────────────────────
-# 2.17 — ENABLE ORGANIZATIONS
+# 12 — MAP REALM ROLES TO doer-admin SCOPE
 # ─────────────────────────────────────────────
-section "2.17 — Enable Organizations feature"
+section "12 — Map realm roles to doer-admin token scope"
 
-# Refresh token
+get_token
+
+CUSTOM_REALM_ROLES=$(kc_api GET "/admin/realms/${REALM}/roles" | python3 -c "
+import sys, json
+roles = json.load(sys.stdin)
+custom = [{'id':r['id'],'name':r['name']} for r in roles if r['name'] in ('platform_admin','tenant_admin','tenant_employee','end_user')]
+print(json.dumps(custom))
+")
+
+STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${ADMIN_CLIENT_UUID}/scope-mappings/realm" "$CUSTOM_REALM_ROLES")
+if [ "$STATUS" = "204" ]; then
+  pass "Realm roles mapped to doer-admin scope"
+else
+  info "Realm role scope mapping for doer-admin (HTTP $STATUS)"
+fi
+
+# ─────────────────────────────────────────────
+# 13 — CREATE CLIENT: doer-gateway (Bearer-only for APISIX JWT validation)
+# ─────────────────────────────────────────────
+section "13 — Create client: doer-gateway (bearer-only)"
+
+STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients" '{
+  "clientId": "doer-gateway",
+  "name": "API Gateway",
+  "description": "Confidential client for APISIX to validate JWTs on infrastructure routes",
+  "enabled": true,
+  "publicClient": false,
+  "standardFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false,
+  "bearerOnly": false,
+  "protocol": "openid-connect"
+}')
+
+if [ "$STATUS" = "201" ]; then
+  pass "Client 'doer-gateway' created (confidential)"
+elif [ "$STATUS" = "409" ]; then
+  info "Client 'doer-gateway' already exists"
+else
+  fail "Failed to create client 'doer-gateway' (HTTP $STATUS)"
+fi
+
+# Get gateway client secret
+GATEWAY_UUID=$(kc_api GET "/admin/realms/${REALM}/clients?clientId=doer-gateway" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+GATEWAY_SECRET=$(kc_api GET "/admin/realms/${REALM}/clients/${GATEWAY_UUID}/client-secret" | python3 -c "import sys,json; print(json.load(sys.stdin)['value'])" 2>/dev/null || true)
+
+if [ -n "$GATEWAY_SECRET" ]; then
+  pass "doer-gateway secret retrieved"
+else
+  info "Could not retrieve doer-gateway secret"
+fi
+
+# ─────────────────────────────────────────────
+# 14 — ENABLE ORGANIZATIONS
+# ─────────────────────────────────────────────
+section "14 — Enable Organizations feature"
+
 get_token
 
 STATUS=$(kc_api_status PUT "/admin/realms/${REALM}" '{
@@ -588,75 +481,9 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2.18 — CREATE TEST ORGANIZATION
+# 14 — CONFIGURE OTP POLICY
 # ─────────────────────────────────────────────
-section "2.18 — Create test organization: 'Test Visa Agency'"
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/organizations" '{
-  "name": "Test Visa Agency",
-  "alias": "test-visa",
-  "enabled": true,
-  "description": "Test organization for Doer Visa product",
-  "attributes": {
-    "products": ["doer-visa"],
-    "plan": ["basic"]
-  }
-}')
-
-if [ "$STATUS" = "201" ]; then
-  pass "Organization 'Test Visa Agency' created"
-elif [ "$STATUS" = "409" ]; then
-  info "Organization 'Test Visa Agency' already exists"
-else
-  info "Organization creation returned HTTP $STATUS"
-fi
-
-# ─────────────────────────────────────────────
-# CLIENT SCOPE ROLE MAPPINGS
-# (Required because fullScopeAllowed=false — explicitly map which roles appear in tokens)
-# ─────────────────────────────────────────────
-section "Configure client scope role mappings"
-
-# Refresh token
-get_token
-
-# Get all custom realm roles
-CUSTOM_REALM_ROLES=$(kc_api GET "/admin/realms/${REALM}/roles" | python3 -c "
-import sys, json
-roles = json.load(sys.stdin)
-custom = [{'id':r['id'],'name':r['name']} for r in roles if r['name'] in ('platform_admin','tenant_admin','tenant_employee','end_user')]
-print(json.dumps(custom))
-")
-
-# Add realm roles to doer-visa and doer-admin client scope mappings
-for CLIENT_NAME in "doer-visa" "doer-admin"; do
-  if [ "$CLIENT_NAME" = "doer-visa" ]; then CID=$VISA_CLIENT_UUID; else CID=$ADMIN_CLIENT_UUID; fi
-  STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${CID}/scope-mappings/realm" "$CUSTOM_REALM_ROLES")
-  if [ "$STATUS" = "204" ]; then
-    pass "Realm roles mapped to ${CLIENT_NAME} scope"
-  else
-    info "Realm role scope mapping for ${CLIENT_NAME} (HTTP $STATUS)"
-  fi
-done
-
-# Add doer-visa client roles to doer-visa scope
-ALL_VISA_ROLES=$(kc_api GET "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/roles" | python3 -c "
-import sys, json
-roles = json.load(sys.stdin)
-print(json.dumps([{'id':r['id'],'name':r['name']} for r in roles]))
-")
-
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/scope-mappings/clients/${VISA_CLIENT_UUID}" "$ALL_VISA_ROLES")
-if [ "$STATUS" = "204" ]; then
-  pass "doer-visa client roles mapped to doer-visa scope"
-else
-  info "doer-visa client role scope mapping (HTTP $STATUS)"
-fi
-
-# ─────────────────────────────────────────────
-# 2.22 — CONFIGURE OTP POLICY
-# ─────────────────────────────────────────────
-section "2.22-2.23 — Configure authentication & OTP policy"
+section "15 — Configure OTP policy"
 
 STATUS=$(kc_api_status PUT "/admin/realms/${REALM}" '{
   "otpPolicyType": "totp",
@@ -674,49 +501,17 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# RETRIEVE AND SAVE CLIENT SECRET FOR doer-auth-svc
+# 15 — RETRIEVE AUTH SERVICE SECRET
 # ─────────────────────────────────────────────
-section "Retrieve client secrets"
+section "16 — Retrieve auth service client secret"
 
-# Refresh token
 get_token
 
 AUTH_SVC_SECRET=$(kc_api GET "/admin/realms/${REALM}/clients/${AUTH_SVC_UUID}/client-secret" | python3 -c "import sys,json; print(json.load(sys.stdin)['value'])")
 if [ -n "$AUTH_SVC_SECRET" ]; then
-  pass "doer-auth-svc secret: ${AUTH_SVC_SECRET}"
+  pass "doer-auth-svc secret retrieved"
 else
   info "Could not retrieve doer-auth-svc secret"
-fi
-
-# doer-visa-backend is bearer-only, no client secret needed
-info "doer-visa-backend is bearer-only (no client secret)"
-
-# ─────────────────────────────────────────────
-# CONFIGURE doer-visa CLIENT SCOPE MAPPINGS
-# ─────────────────────────────────────────────
-section "Configure client scope mappings for doer-visa"
-
-# Make doer-visa client roles available in the doer-visa client's tokens
-# Add client role mapper to doer-visa
-STATUS=$(kc_api_status POST "/admin/realms/${REALM}/clients/${VISA_CLIENT_UUID}/protocol-mappers/models" '{
-  "name": "doer-visa-roles",
-  "protocol": "openid-connect",
-  "protocolMapper": "oidc-usermodel-client-role-mapper",
-  "consentRequired": false,
-  "config": {
-    "multivalued": "true",
-    "id.token.claim": "true",
-    "access.token.claim": "true",
-    "claim.name": "resource_access.doer-visa.roles",
-    "userinfo.token.claim": "true",
-    "usermodel.clientRoleMapping.clientId": "doer-visa"
-  }
-}')
-
-if [ "$STATUS" = "201" ]; then
-  pass "Client role mapper added to doer-visa client"
-else
-  info "Client role mapper for doer-visa (HTTP $STATUS)"
 fi
 
 # ─────────────────────────────────────────────
@@ -724,32 +519,36 @@ fi
 # ─────────────────────────────────────────────
 echo ""
 echo "========================================"
-echo "  Phase 2 Configuration Complete"
+echo "  Realm Configuration Complete"
 echo "========================================"
 echo ""
 echo "  Realm:           doer"
 echo "  Realm Roles:     platform_admin, tenant_admin, tenant_employee, end_user"
 echo "  Default Role:    end_user"
 echo ""
-echo "  Clients:"
-echo "    doer-visa          (public, PKCE S256)"
-echo "    doer-visa-backend  (confidential, bearer-only)"
-echo "    doer-auth-svc      (confidential, service account)"
-echo "    doer-admin         (public, PKCE S256)"
+echo "  Clients (infrastructure only):"
+echo "    doer-auth-svc  (confidential, service account — for Auth Service)"
+echo "    doer-admin     (public, PKCE S256 — for Admin Portal UI)"
+echo "    doer-gateway   (confidential — for APISIX JWT validation)"
 echo ""
-echo "  doer-visa Roles: manage_all, manage_applications, process_visa,"
-echo "                   approve_visa, view_applications, apply_visa,"
-echo "                   view_own_status"
-echo "  Composite Roles: staff_basic, staff_senior, customer"
-echo ""
-echo "  Organizations:   enabled (test org: 'Test Visa Agency')"
+echo "  Organizations:   enabled"
 echo "  Password Policy: 8+ chars, upper+lower+digit+special, history=3"
 echo "  Brute Force:     5 failures → 60s lockout, max 15min"
 echo "  OTP Policy:      TOTP, 6 digits, 30s period"
 echo ""
-echo "  Secrets (save these to .env):"
-echo "    AUTH_SVC_CLIENT_SECRET=${AUTH_SVC_SECRET}"
-echo "    VISA_BACKEND_CLIENT_SECRET=${VISA_BE_SECRET}"
+if [ "${1:-}" = "--show-secrets" ]; then
+  echo "  Secrets (save these to .env):"
+  echo "    KEYCLOAK_CLIENT_SECRET=${AUTH_SVC_SECRET}"
+  echo "    OIDC_CLIENT_SECRET=${GATEWAY_SECRET}  (for APISIX setup-routes.sh)"
+else
+  echo "  Secrets: retrieved (re-run with --show-secrets to display)"
+fi
 echo ""
-echo "  Next: Phase 3 (Auth Service), Phase 4 (APISIX), Phase 5 (Themes)"
+echo "  Next steps:"
+echo "    1. Update services/auth-service/.env with KEYCLOAK_CLIENT_SECRET"
+echo "    2. Start auth-service: npm run build && npm run migration:run && npm run start:dev"
+echo "    3. Setup APISIX routes: bash config/apisix/setup-routes.sh"
+echo "    4. Start admin portal: cd services/admin-portal && npm run dev"
+echo "    5. Create platform_admin user in Keycloak admin console"
+echo "    6. Login to Admin Portal → create products from UI"
 echo ""

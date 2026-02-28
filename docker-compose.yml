@@ -31,9 +31,8 @@ services:
     environment:
       ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"
       ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
-      ALLOW_NONE_AUTHENTICATION: "yes"
     ports:
-      - "2379:2379"
+      - "127.0.0.1:2379:2379"
     volumes:
       - etcd-data:/etcd-data
     healthcheck:

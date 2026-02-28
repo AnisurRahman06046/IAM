@@ -5,7 +5,7 @@ import { Tenant, TenantStatus } from '../database/entities/tenant.entity';
 import { KeycloakAdminService } from '../keycloak/keycloak-admin.service';
 import { AuditService } from '../audit/audit.service';
 import { ActorType } from '../database/entities/audit-log.entity';
-import { NotFoundException } from '../common/exceptions/domain-exceptions';
+import { NotFoundException, ConflictException } from '../common/exceptions/domain-exceptions';
 import { RequestUser } from '../common/interfaces/jwt-payload.interface';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
@@ -23,40 +23,84 @@ export class TenantsService {
   ) {}
 
   async create(dto: CreateTenantDto, actor: RequestUser, ip?: string): Promise<Tenant> {
-    // Create Keycloak organization
-    const orgId = await this.keycloak.createOrganization({
-      name: dto.alias,
-      attributes: {
-        product: [dto.product],
-        plan: [dto.plan || 'basic'],
-        displayName: [dto.name],
-      },
-    });
+    // Check alias uniqueness in DB first
+    const existing = await this.tenantRepo.findOneBy({ alias: dto.alias });
+    if (existing) {
+      throw new ConflictException(`Tenant with alias '${dto.alias}' already exists`);
+    }
+
+    // Create Keycloak organization (use alias as both name and alias)
+    let orgId: string;
+    try {
+      orgId = await this.keycloak.createOrganization({
+        name: dto.alias,
+        attributes: {
+          product: [dto.product],
+          plan: [dto.plan || 'basic'],
+          displayName: [dto.name],
+        },
+      });
+    } catch (err) {
+      // If org already exists in Keycloak (orphaned from a previous failed attempt),
+      // try to find it and reuse it
+      if ((err as any).status === 409 || (err as any).message?.includes('already exists')) {
+        this.logger.warn(`Organization '${dto.alias}' already exists in Keycloak, attempting to reuse`);
+        try {
+          const orgs = await this.keycloak.searchOrganizations(dto.alias);
+          const match = orgs.find((o: any) => o.name === dto.alias || o.alias === dto.alias);
+          if (match) {
+            orgId = match.id as string;
+          } else {
+            throw err;
+          }
+        } catch {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     // Create tenant record
-    const tenant = await this.tenantRepo.save(
-      this.tenantRepo.create({
-        name: dto.name,
-        alias: dto.alias,
-        product: dto.product,
-        plan: dto.plan,
-        maxUsers: dto.maxUsers,
-        billingEmail: dto.billingEmail,
-        domain: dto.domain,
-        keycloakOrgId: orgId,
-      }),
-    );
+    let tenant: Tenant;
+    try {
+      tenant = await this.tenantRepo.save(
+        this.tenantRepo.create({
+          name: dto.name,
+          alias: dto.alias,
+          product: dto.product,
+          plan: dto.plan,
+          maxUsers: dto.maxUsers,
+          billingEmail: dto.billingEmail,
+          domain: dto.domain,
+          keycloakOrgId: orgId,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(`Failed to save tenant, cleaning up Keycloak org: ${(err as Error).message}`);
+      try { await this.keycloak.deleteOrganization(orgId); } catch {}
+      throw err;
+    }
 
     // Create admin user in Keycloak
-    const nameParts = dto.adminFullName.trim().split(/\s+/);
-    const adminUserId = await this.keycloak.createUser({
-      username: dto.adminEmail,
-      email: dto.adminEmail,
-      firstName: nameParts[0],
-      lastName: nameParts.length > 1 ? nameParts.slice(1).join(' ') : '',
-      enabled: true,
-      credentials: [{ type: 'password', value: dto.adminPassword, temporary: false }],
-    });
+    let adminUserId: string;
+    try {
+      const nameParts = dto.adminFullName.trim().split(/\s+/);
+      adminUserId = await this.keycloak.createUser({
+        username: dto.adminEmail,
+        email: dto.adminEmail,
+        firstName: nameParts[0],
+        lastName: nameParts.length > 1 ? nameParts.slice(1).join(' ') : '',
+        enabled: true,
+        emailVerified: true,
+        // SECURITY: temporary=true forces password change on first login
+        credentials: [{ type: 'password', value: dto.adminPassword, temporary: true }],
+      });
+    } catch (err) {
+      this.logger.error(`Failed to create admin user: ${(err as Error).message}`);
+      // Don't rollback tenant — it's created, admin can be added later
+      throw err;
+    }
 
     // Assign tenant_admin role + add to org
     await this.keycloak.assignRealmRoles(adminUserId, ['tenant_admin']);
@@ -119,7 +163,12 @@ export class TenantsService {
     const tenant = await this.tenantRepo.findOneBy({ id });
     if (!tenant) throw new NotFoundException('Tenant', id);
 
-    Object.assign(tenant, dto);
+    // SECURITY: Whitelist only safe fields to prevent mass assignment
+    if (dto.name !== undefined) tenant.name = dto.name;
+    if (dto.plan !== undefined) tenant.plan = dto.plan;
+    if (dto.maxUsers !== undefined) tenant.maxUsers = dto.maxUsers;
+    if (dto.billingEmail !== undefined) tenant.billingEmail = dto.billingEmail;
+    if (dto.domain !== undefined) tenant.domain = dto.domain;
     const updated = await this.tenantRepo.save(tenant);
 
     // Sync to Keycloak org attributes

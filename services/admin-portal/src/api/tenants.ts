@@ -16,6 +16,19 @@ export interface Tenant {
   memberCount?: number;
 }
 
+export interface CreateTenantPayload {
+  name: string;
+  alias: string;
+  product: string;
+  plan?: string;
+  maxUsers?: number;
+  billingEmail?: string;
+  domain?: string;
+  adminEmail: string;
+  adminFullName: string;
+  adminPassword: string;
+}
+
 export const tenantsApi = {
   list: (params?: { page?: number; limit?: number }) => {
     const qs = params
@@ -31,4 +44,9 @@ export const tenantsApi = {
     );
   },
   get: (id: string) => apiCall<Tenant>(`/api/tenants/${id}`),
+  create: (data: CreateTenantPayload) =>
+    apiCall<Tenant>("/api/tenants", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };

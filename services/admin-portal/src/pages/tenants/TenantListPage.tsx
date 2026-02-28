@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Table, Typography, Tag, message, Spin } from "antd";
+import { Table, Typography, Tag, Button, Space, message, Spin } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { tenantsApi, type Tenant } from "../../api/tenants";
 
 const { Title } = Typography;
@@ -17,8 +18,8 @@ export function TenantListPage() {
     tenantsApi
       .list({ page: p, limit: 20 })
       .then((res) => {
-        setTenants(res.items);
-        setTotal(res.meta.total);
+        setTenants(res?.items || []);
+        setTotal(res?.meta?.total || 0);
       })
       .catch((err) => message.error(err.message))
       .finally(() => setLoading(false));
@@ -61,7 +62,24 @@ export function TenantListPage() {
 
   return (
     <>
-      <Title level={4}>Tenants</Title>
+      <Space
+        style={{
+          width: "100%",
+          justifyContent: "space-between",
+          marginBottom: 16,
+        }}
+      >
+        <Title level={4} style={{ margin: 0 }}>
+          Tenants
+        </Title>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => navigate("/tenants/new")}
+        >
+          New Tenant
+        </Button>
+      </Space>
       <Table
         dataSource={tenants}
         columns={columns}

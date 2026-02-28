@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 #
-# Doer IAM — APISIX Route Configuration
+# Doer IAM — APISIX Route Configuration (Infrastructure Only)
+#
+# Creates routes for platform infrastructure endpoints.
+# Product-specific routes (e.g., /api/visa/*, /api/school/*) are created
+# automatically by the Admin Portal when a product is onboarded.
+#
 # Idempotent: safe to re-run (uses PUT with fixed route IDs)
 #
 set -euo pipefail
 
 ADMIN_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
-API_KEY="${APISIX_ADMIN_KEY:-doer_apisix_admin_key_2026}"
+API_KEY="${APISIX_ADMIN_KEY:?APISIX_ADMIN_KEY must be set}"
 
 # Keycloak and Auth Service are on the host — APISIX also runs on host network
 KC_HOST="localhost"
@@ -16,9 +21,12 @@ AUTH_PORT="3001"
 
 KC_DISCOVERY="http://${KC_HOST}:${KC_PORT}/realms/doer/.well-known/openid-configuration"
 
-# Confidential client for APISIX JWT validation (bearer-only introspection)
-OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-doer-visa-backend}"
-OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-aaJBckTubuycgdQuW5u4hZsRZF6p22jr}"
+# Gateway client for APISIX JWT validation (bearer-only, infrastructure routes)
+OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-doer-gateway}"
+OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:?OIDC_CLIENT_SECRET must be set}"
+
+# CORS allowed origins — comma-separated, no wildcards in production
+CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5173,http://localhost:3002}"
 
 put_route() {
   local id="$1"
@@ -72,7 +80,6 @@ echo ""
 # ──────────────────────────────────────────────
 echo "── Global Rules ──"
 
-# Global: request-id on all routes
 put_global_rule 1 '{
   "plugins": {
     "request-id": {
@@ -109,7 +116,7 @@ put_route 1 "{
       \"policy\": \"local\"
     },
     \"cors\": {
-      \"allow_origins\": \"**\",
+      \"allow_origins\": \"${CORS_ORIGINS}\",
       \"allow_methods\": \"GET,POST,OPTIONS\",
       \"allow_headers\": \"Content-Type,Authorization,X-Request-Id\",
       \"expose_headers\": \"X-Request-Id\",
@@ -154,7 +161,7 @@ put_route 2 "{
       \"policy\": \"local\"
     },
     \"cors\": {
-      \"allow_origins\": \"**\",
+      \"allow_origins\": \"${CORS_ORIGINS}\",
       \"allow_methods\": \"GET,POST,PUT,DELETE,OPTIONS\",
       \"allow_headers\": \"Content-Type,Authorization,X-Request-Id\",
       \"expose_headers\": \"X-Request-Id\",
@@ -165,7 +172,7 @@ put_route 2 "{
 }"
 
 # ──────────────────────────────────────────────
-# Route 3: /api/platform/* → Auth Service (JWT required, platform_admin)
+# Route 3: /api/platform/* → Auth Service (JWT required)
 # ──────────────────────────────────────────────
 echo ""
 echo "── Route 3: /api/platform/* (protected) ──"
@@ -199,7 +206,7 @@ put_route 3 "{
       \"policy\": \"local\"
     },
     \"cors\": {
-      \"allow_origins\": \"**\",
+      \"allow_origins\": \"${CORS_ORIGINS}\",
       \"allow_methods\": \"GET,OPTIONS\",
       \"allow_headers\": \"Content-Type,Authorization,X-Request-Id\",
       \"expose_headers\": \"X-Request-Id\",
@@ -210,67 +217,12 @@ put_route 3 "{
 }"
 
 # ──────────────────────────────────────────────
-# Route 4: /api/visa/* → Doer-Visa Service
-# JWT validated by APISIX; claims injected as headers
+# Route 4: Keycloak OIDC Discovery (passthrough)
 # ──────────────────────────────────────────────
 echo ""
-echo "── Route 4: /api/visa/* (protected, header injection) ──"
-
-# Lua function: parse X-Userinfo (base64 JWT payload) → individual headers
-# Runs in before_proxy phase (after openid-connect has validated the token)
-VISA_LUA_FN='return function(conf, ctx) local core = require(\"apisix.core\"); local hdr = core.request.header(ctx, \"X-Userinfo\"); if not hdr then return end; local json_str = ngx.decode_base64(hdr); if not json_str then return end; local payload = require(\"cjson.safe\").decode(json_str); if not payload then return end; if payload.sub then core.request.set_header(ctx, \"X-User-Id\", payload.sub) end; if payload.email then core.request.set_header(ctx, \"X-User-Email\", payload.email) end; if payload.realm_access and payload.realm_access.roles then core.request.set_header(ctx, \"X-User-Roles\", table.concat(payload.realm_access.roles, \",\")) end; local ra = payload.resource_access; if ra and ra[\"doer-visa\"] and ra[\"doer-visa\"].roles then core.request.set_header(ctx, \"X-Client-Roles\", table.concat(ra[\"doer-visa\"].roles, \",\")) end; if payload.organization then local org = payload.organization; if type(org) == \"table\" then if org[1] then core.request.set_header(ctx, \"X-Organization-Id\", org[1]) else for k, _ in pairs(org) do core.request.set_header(ctx, \"X-Organization-Id\", k); break end end end end; core.request.set_header(ctx, \"X-Userinfo\", nil) end'
+echo "── Route 4: /realms/* (Keycloak passthrough) ──"
 
 put_route 4 "{
-  \"name\": \"visa-api\",
-  \"desc\": \"Doer-Visa product API — JWT validated, claims injected as headers\",
-  \"uris\": [\"/api/visa\", \"/api/visa/*\"],
-  \"methods\": [\"GET\", \"POST\", \"PUT\", \"DELETE\", \"OPTIONS\"],
-  \"upstream\": {
-    \"type\": \"roundrobin\",
-    \"nodes\": {\"${AUTH_HOST}:4001\": 1},
-    \"timeout\": {\"connect\": 5, \"send\": 10, \"read\": 10}
-  },
-  \"plugins\": {
-    \"openid-connect\": {
-      \"discovery\": \"${KC_DISCOVERY}\",
-      \"client_id\": \"${OIDC_CLIENT_ID}\",
-      \"client_secret\": \"${OIDC_CLIENT_SECRET}\",
-      \"bearer_only\": true,
-      \"realm\": \"doer\",
-      \"token_signing_alg_values_expected\": \"RS256\",
-      \"set_userinfo_header\": true,
-      \"set_access_token_header\": false
-    },
-    \"serverless-pre-function\": {
-      \"phase\": \"before_proxy\",
-      \"functions\": [\"${VISA_LUA_FN}\"]
-    },
-    \"limit-count\": {
-      \"count\": 1000,
-      \"time_window\": 60,
-      \"key_type\": \"var\",
-      \"key\": \"remote_addr\",
-      \"rejected_code\": 429,
-      \"policy\": \"local\"
-    },
-    \"cors\": {
-      \"allow_origins\": \"**\",
-      \"allow_methods\": \"GET,POST,PUT,DELETE,OPTIONS\",
-      \"allow_headers\": \"Content-Type,Authorization,X-Request-Id\",
-      \"expose_headers\": \"X-Request-Id\",
-      \"max_age\": 3600,
-      \"allow_credential\": false
-    }
-  }
-}"
-
-# ──────────────────────────────────────────────
-# Route 5: Keycloak OIDC Discovery (passthrough)
-# ──────────────────────────────────────────────
-echo ""
-echo "── Route 5: /realms/* (Keycloak passthrough) ──"
-
-put_route 5 "{
   \"name\": \"keycloak-oidc\",
   \"desc\": \"Keycloak OIDC discovery and auth endpoints passthrough\",
   \"uri\": \"/realms/*\",
@@ -282,7 +234,7 @@ put_route 5 "{
   },
   \"plugins\": {
     \"cors\": {
-      \"allow_origins\": \"**\",
+      \"allow_origins\": \"${CORS_ORIGINS}\",
       \"allow_methods\": \"GET,POST,OPTIONS\",
       \"allow_headers\": \"Content-Type,Authorization\",
       \"max_age\": 3600,
@@ -292,12 +244,12 @@ put_route 5 "{
 }"
 
 # ──────────────────────────────────────────────
-# Route 6: Swagger docs (pass-through to auth service, public)
+# Route 5: Swagger docs (pass-through, public)
 # ──────────────────────────────────────────────
 echo ""
-echo "── Route 6: /api/docs* (Swagger passthrough) ──"
+echo "── Route 5: /api/docs* (Swagger passthrough) ──"
 
-put_route 6 "{
+put_route 5 "{
   \"name\": \"swagger-docs\",
   \"desc\": \"Auth Service Swagger docs\",
   \"uri\": \"/api/docs*\",
@@ -310,12 +262,12 @@ put_route 6 "{
 }"
 
 # ──────────────────────────────────────────────
-# Route 7: /api/admin/* → Auth Service (JWT required, platform_admin)
+# Route 6: /api/admin/* → Auth Service (JWT required, admin portal)
 # ──────────────────────────────────────────────
 echo ""
-echo "── Route 7: /api/admin/* (protected, admin portal) ──"
+echo "── Route 6: /api/admin/* (protected, admin portal) ──"
 
-put_route 7 "{
+put_route 6 "{
   \"name\": \"admin-portal-api\",
   \"desc\": \"Admin portal endpoints — JWT required (platform_admin enforced by backend)\",
   \"uris\": [\"/api/admin\", \"/api/admin/*\"],
@@ -344,7 +296,7 @@ put_route 7 "{
       \"policy\": \"local\"
     },
     \"cors\": {
-      \"allow_origins\": \"**\",
+      \"allow_origins\": \"${CORS_ORIGINS}\",
       \"allow_methods\": \"GET,POST,PUT,DELETE,OPTIONS\",
       \"allow_headers\": \"Content-Type,Authorization,X-Request-Id\",
       \"expose_headers\": \"X-Request-Id\",
@@ -360,15 +312,12 @@ echo "============================================"
 echo " All routes configured!"
 echo "============================================"
 echo ""
-
-# List all routes
-echo "Registered routes:"
-curl -s "${ADMIN_URL}/apisix/admin/routes" \
-  -H "X-API-KEY: ${API_KEY}" | \
-  python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for r in data.get('list', []):
-    v = r.get('value', {})
-    print(f'  [{v.get(\"id\",\"?\")}] {v.get(\"name\",\"unnamed\"):20s}  {v.get(\"uri\",\"\")}')
-" 2>/dev/null || echo "  (could not parse response)"
+echo "  Route 1: /auth/*        → Auth Service (public)"
+echo "  Route 2: /api/tenants/* → Auth Service (JWT required)"
+echo "  Route 3: /api/platform/*→ Auth Service (JWT required)"
+echo "  Route 4: /realms/*      → Keycloak (passthrough)"
+echo "  Route 5: /api/docs*     → Auth Service (Swagger)"
+echo "  Route 6: /api/admin/*   → Auth Service (JWT required)"
+echo ""
+echo "  Product routes (e.g., /api/visa/*) are created via Admin Portal."
+echo ""

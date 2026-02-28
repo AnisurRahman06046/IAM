@@ -15,6 +15,7 @@ import { GatewayModule } from './gateway/gateway.module';
 import { ProductsModule } from './products/products.module';
 import { JwtMiddleware } from './common/middleware/jwt.middleware';
 import { RolesGuard } from './common/guards/roles.guard';
+import { ClientRolesGuard } from './common/guards/client-roles.guard';
 
 @Module({
   imports: [
@@ -38,6 +39,10 @@ import { RolesGuard } from './common/guards/roles.guard';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ClientRolesGuard,
     },
   ],
 })

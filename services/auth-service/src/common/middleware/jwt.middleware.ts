@@ -19,6 +19,18 @@ export class JwtMiddleware implements NestMiddleware {
         return next();
       }
 
+      // SECURITY: Validate token expiration
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        this.logger.warn('Rejected expired JWT token');
+        return next();
+      }
+
+      // SECURITY: Validate token has issued-at claim
+      if (payload.iat && payload.iat * 1000 > Date.now() + 60000) {
+        this.logger.warn('Rejected JWT with future iat claim');
+        return next();
+      }
+
       // organization claim can be an array of aliases (e.g. ["e2e-test-corp"])
       // or a map (e.g. {"e2e-test-corp": {}})
       const orgKeys = payload.organization

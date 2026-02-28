@@ -10,6 +10,7 @@ export function getRefreshToken(): string | null {
 }
 
 export function setTokens(accessToken: string, refreshToken?: string): void {
+  if (!accessToken) return;
   sessionStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
   if (refreshToken) {
     sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);

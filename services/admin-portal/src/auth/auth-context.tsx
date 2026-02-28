@@ -87,9 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ refreshToken, clientId: CLIENT_ID }),
       });
       if (!resp.ok) return false;
-      const data = await resp.json();
-      setTokens(data.access_token, data.refresh_token);
-      setAccessToken(data.access_token);
+      const resp_data = await resp.json();
+      const tokens = resp_data.data || resp_data;
+      setTokens(tokens.accessToken, tokens.refreshToken);
+      setAccessToken(tokens.accessToken);
       return true;
     } catch {
       return false;

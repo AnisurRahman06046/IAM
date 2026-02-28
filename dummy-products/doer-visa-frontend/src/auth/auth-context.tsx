@@ -8,6 +8,7 @@ import {
   decodeJwt,
   type DecodedJwt,
 } from "./token-storage";
+import { setAuthHooks } from "../api/client";
 
 const APISIX_BASE = "http://localhost:9080";
 const KC_BASE = "http://localhost:8080";
@@ -64,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       scope: "openid",
       code_challenge: challenge,
       code_challenge_method: "S256",
+      prompt: "login",
     });
 
     window.location.href = `${KC_BASE}/realms/${REALM}/protocol/openid-connect/auth?${params}`;
@@ -95,14 +97,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ refreshToken, clientId: CLIENT_ID }),
       });
       if (!resp.ok) return false;
-      const data = await resp.json();
-      setTokens(data.access_token, data.refresh_token);
-      setAccessToken(data.access_token);
+      const raw = await resp.json();
+      const tokens = raw.data || raw;
+      setTokens(tokens.accessToken || tokens.access_token, tokens.refreshToken || tokens.refresh_token);
+      setAccessToken(tokens.accessToken || tokens.access_token);
       return true;
     } catch {
       return false;
     }
   }, []);
+
+  useEffect(() => {
+    setAuthHooks(refresh, logout);
+  }, [refresh, logout]);
 
   const register = useCallback(
     async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {

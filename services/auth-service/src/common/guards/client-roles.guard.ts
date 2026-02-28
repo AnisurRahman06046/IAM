@@ -5,14 +5,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ROLES_KEY } from '../decorators/roles.decorator';
+import { CLIENT_ROLES_KEY } from '../decorators/client-roles.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { UnauthorizedException, ForbiddenException } from '../exceptions/domain-exceptions';
 import { RequestUser } from '../interfaces/jwt-payload.interface';
 
 @Injectable()
-export class RolesGuard implements CanActivate {
-  private readonly logger = new Logger(RolesGuard.name);
+export class ClientRolesGuard implements CanActivate {
+  private readonly logger = new Logger(ClientRolesGuard.name);
 
   constructor(private readonly reflector: Reflector) {}
 
@@ -23,6 +23,13 @@ export class RolesGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
+    const requiredClientRoles = this.reflector.getAllAndOverride<{ client: string; roles: string[] }>(
+      CLIENT_ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!requiredClientRoles) return true;
+
     const request = context.switchToHttp().getRequest();
     const user: RequestUser = request.user;
 
@@ -30,23 +37,21 @@ export class RolesGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-
-    if (!requiredRoles || requiredRoles.length === 0) {
+    // platform_admin bypasses client role checks
+    if (user.realmRoles.includes('platform_admin')) {
       return true;
     }
 
-    const hasRole = requiredRoles.some((role) => user.realmRoles.includes(role));
+    const { client, roles } = requiredClientRoles;
+    const userClientRoles = user.clientRoles[client] || [];
+    const hasRole = roles.some((role) => userClientRoles.includes(role));
+
     if (!hasRole) {
-      // SECURITY: Log failed access attempts
       this.logger.warn(
-        `Access denied for user ${user.id}: required [${requiredRoles.join(', ')}], has [${user.realmRoles.join(', ')}] on ${request.method} ${request.url}`,
+        `User ${user.id} denied: requires client roles [${roles.join(', ')}] on ${client}`,
       );
       throw new ForbiddenException(
-        `Insufficient permissions`,
+        `Required client roles: ${roles.join(', ')}`,
       );
     }
 

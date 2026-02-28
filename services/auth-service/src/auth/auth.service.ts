@@ -168,14 +168,31 @@ export class AuthService {
     const isEmail = dto.identifier.includes('@');
 
     if (isEmail) {
-      const user = await this.keycloak.getUserByEmail(dto.identifier);
-      if (!user) throw new NotFoundException('User', dto.identifier);
-      await this.keycloak.sendActionsEmail(user.id as string, ['UPDATE_PASSWORD']);
+      // SECURITY: Always return success to prevent user enumeration
+      try {
+        const user = await this.keycloak.getUserByEmail(dto.identifier);
+        if (user) {
+          await this.keycloak.sendActionsEmail(user.id as string, ['UPDATE_PASSWORD']);
+        }
+      } catch (err) {
+        this.logger.warn(`Password reset email failed: ${(err as Error).message}`);
+      }
       return { method: 'email' };
     }
 
     // Phone-based OTP
     const phone = dto.identifier;
+
+    // SECURITY: Rate limit OTP generation — max 3 per phone per hour
+    const rateLimitKey = `otp:rate_limit:${phone}`;
+    const attempts = await this.redis.incr(rateLimitKey);
+    if (attempts === 1) {
+      await this.redis.expire(rateLimitKey, 3600); // 1 hour window
+    }
+    if (attempts > 3) {
+      throw new ValidationException('Too many OTP requests. Please try again later.');
+    }
+
     const otp = this.generateOtp();
     const hash = await bcrypt.hash(otp, 10);
 
@@ -211,13 +228,15 @@ export class AuthService {
       throw new ValidationException('Invalid OTP');
     }
 
+    // SECURITY: Delete OTP immediately to prevent reuse
+    await this.redis.del(key);
+
     // Find user by phone
     const users = await this.keycloak.searchUsers(dto.phone);
-    if (!users.length) throw new NotFoundException('User', dto.phone);
+    if (!users.length) throw new NotFoundException('User not found');
 
     const userId = users[0].id as string;
     await this.keycloak.resetPassword(userId, dto.newPassword);
-    await this.redis.del(key);
 
     await this.audit.log({
       actorId: userId,
