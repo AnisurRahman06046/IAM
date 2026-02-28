@@ -1,0 +1,139 @@
+/* Doer IAM — Base theme styles shared across all variants */
+
+/* Reset default Keycloak background */
+.login-pf body,
+body.kc-login {
+    background: var(--doer-bg-gradient) !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Login card */
+#kc-login {
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+.card-pf {
+    border-radius: 12px !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    padding: 2rem !important;
+}
+
+/* Header / logo area */
+#kc-header-wrapper {
+    text-align: center;
+    padding-bottom: 1rem;
+}
+
+#kc-header-wrapper .kc-logo-text {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--doer-primary);
+}
+
+/* Form inputs */
+.login-pf .form-control,
+.kc-login .form-control {
+    border-radius: 8px !important;
+    border: 1.5px solid #d1d5db !important;
+    padding: 0.625rem 0.875rem !important;
+    font-size: 0.9375rem !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+.login-pf .form-control:focus,
+.kc-login .form-control:focus {
+    border-color: var(--doer-primary) !important;
+    box-shadow: 0 0 0 3px var(--doer-primary-ring) !important;
+    outline: none !important;
+}
+
+/* Primary button */
+.login-pf .btn-primary,
+.kc-login .btn-primary,
+#kc-login .btn-primary {
+    background-color: var(--doer-primary) !important;
+    border-color: var(--doer-primary) !important;
+    border-radius: 8px !important;
+    padding: 0.625rem 1.25rem !important;
+    font-weight: 600 !important;
+    font-size: 0.9375rem !important;
+    transition: background-color 0.2s, transform 0.1s !important;
+    width: 100% !important;
+}
+
+.login-pf .btn-primary:hover,
+.kc-login .btn-primary:hover,
+#kc-login .btn-primary:hover {
+    background-color: var(--doer-primary-hover) !important;
+    border-color: var(--doer-primary-hover) !important;
+    transform: translateY(-1px) !important;
+}
+
+.login-pf .btn-primary:active,
+.kc-login .btn-primary:active {
+    transform: translateY(0) !important;
+}
+
+/* Social login buttons */
+.kc-social-provider-container {
+    margin-top: 1rem !important;
+}
+
+.kc-social-provider-container .kc-social-provider {
+    border-radius: 8px !important;
+    border: 1.5px solid #e5e7eb !important;
+    padding: 0.5rem 1rem !important;
+    transition: background-color 0.2s !important;
+}
+
+.kc-social-provider-container .kc-social-provider:hover {
+    background-color: #f9fafb !important;
+}
+
+/* Links */
+.login-pf a,
+.kc-login a {
+    color: var(--doer-primary) !important;
+    text-decoration: none !important;
+}
+
+.login-pf a:hover,
+.kc-login a:hover {
+    text-decoration: underline !important;
+}
+
+/* Error/alert messages */
+.alert-error {
+    border-radius: 8px !important;
+    border-left: 4px solid #ef4444 !important;
+}
+
+.alert-success {
+    border-radius: 8px !important;
+    border-left: 4px solid #22c55e !important;
+}
+
+/* Labels */
+.login-pf label,
+.kc-login label {
+    font-weight: 500 !important;
+    font-size: 0.875rem !important;
+    color: #374151 !important;
+    margin-bottom: 0.375rem !important;
+}
+
+/* Footer / powered by */
+#kc-info-wrapper {
+    text-align: center;
+    padding-top: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .card-pf {
+        margin: 1rem !important;
+        padding: 1.5rem !important;
+    }
+}

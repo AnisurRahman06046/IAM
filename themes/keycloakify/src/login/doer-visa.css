@@ -1,0 +1,39 @@
+/* Doer-Visa theme variant — Blue/teal palette for visa services */
+
+:root {
+    --doer-primary: #0d9488;
+    --doer-primary-hover: #0f766e;
+    --doer-primary-ring: rgba(13, 148, 136, 0.2);
+    --doer-bg-gradient: linear-gradient(135deg, #0f766e 0%, #134e4a 50%, #1e293b 100%);
+    --doer-accent: #14b8a6;
+}
+
+/* Logo area */
+#kc-header-wrapper::before {
+    content: '';
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 0.75rem;
+    background: linear-gradient(135deg, var(--doer-primary), var(--doer-accent));
+    border-radius: 16px;
+    /* Placeholder for actual logo - replace with background-image */
+}
+
+/* Page title override for visa theme */
+#kc-page-title {
+    color: #0f172a !important;
+    font-size: 1.25rem !important;
+    font-weight: 600 !important;
+}
+
+/* Subtle branding line under the form */
+.card-pf::after {
+    content: 'Doer Visa Services';
+    display: block;
+    text-align: center;
+    margin-top: 1.5rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    letter-spacing: 0.05em;
+}

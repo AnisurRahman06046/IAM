@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.baeldung.com)",
+      "WebSearch",
+      "WebFetch(domain:docs.redhat.com)",
+      "WebFetch(domain:wjw465150.gitbooks.io)",
+      "WebFetch(domain:www.keycloak.org)",
+      "WebFetch(domain:blog.boottechsolutions.com)",
+      "WebFetch(domain:www.mastertheboss.com)",
+      "WebFetch(domain:www.appsdeveloperblog.com)",
+      "WebFetch(domain:kc-api.github.io)"
+    ]
+  }
+}

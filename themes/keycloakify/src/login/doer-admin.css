@@ -1,0 +1,39 @@
+/* Doer-Admin theme variant — Dark blue palette for admin panel */
+
+:root {
+    --doer-primary: #2563eb;
+    --doer-primary-hover: #1d4ed8;
+    --doer-primary-ring: rgba(37, 99, 235, 0.2);
+    --doer-bg-gradient: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%);
+    --doer-accent: #3b82f6;
+}
+
+/* Logo area */
+#kc-header-wrapper::before {
+    content: '';
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 0.75rem;
+    background: linear-gradient(135deg, var(--doer-primary), var(--doer-accent));
+    border-radius: 16px;
+    /* Placeholder for actual logo - replace with background-image */
+}
+
+/* Page title override for admin theme */
+#kc-page-title {
+    color: #0f172a !important;
+    font-size: 1.25rem !important;
+    font-weight: 600 !important;
+}
+
+/* Subtle branding line under the form */
+.card-pf::after {
+    content: 'Doer Platform Administration';
+    display: block;
+    text-align: center;
+    margin-top: 1.5rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    letter-spacing: 0.05em;
+}

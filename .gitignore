@@ -1,0 +1,40 @@
+# Environment
+.env
+!.env.example
+
+# Dependencies
+node_modules/
+vendor/
+.venv/
+
+# Build outputs
+dist/
+build/
+target/
+*.jar
+!keycloak-*/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+docker-data/
+
+# Logs
+*.log
+logs/
+
+# Keycloak data (if dev mode with H2)
+keycloak-*/data/
+
+# Secrets
+*.pem
+*.key
+*.p12

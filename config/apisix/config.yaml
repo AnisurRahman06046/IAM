@@ -1,0 +1,49 @@
+#
+# Doer IAM — APISIX Configuration
+#
+
+apisix:
+  node_listen:
+    - 9080
+  enable_ipv6: false
+  enable_control: true
+  control:
+    ip: "127.0.0.1"
+    port: 9092
+
+  ssl:
+    enable: false  # TLS will be enabled in production
+
+deployment:
+  admin:
+    admin_key:
+      - name: admin
+        key: doer_apisix_admin_key_2026
+        role: admin
+    allow_admin:
+      - 0.0.0.0/0  # Restrict in production
+
+  etcd:
+    host:
+      - "http://127.0.0.1:2379"
+    prefix: "/apisix"
+
+plugin_attr:
+  prometheus:
+    export_addr:
+      ip: "0.0.0.0"
+      port: 9091
+
+plugins:
+  - openid-connect
+  - authz-keycloak
+  - serverless-pre-function
+  - limit-count
+  - limit-req
+  - proxy-rewrite
+  - cors
+  - prometheus
+  - ip-restriction
+  - request-id
+  - real-ip
+  - response-rewrite
