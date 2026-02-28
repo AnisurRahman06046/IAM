@@ -6,6 +6,7 @@ import { CallbackPage } from "./pages/CallbackPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { UsersPage } from "./pages/UsersPage";
 
 function Router() {
   const [route, setRoute] = useState(getRoute);
@@ -40,6 +41,8 @@ function Router() {
       return <ApplicationsPage />;
     case "profile":
       return <ProfilePage />;
+    case "users":
+      return <UsersPage />;
     case "login":
       return <LoginPage />;
     default:

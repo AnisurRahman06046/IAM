@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product, ProductStatus } from '../database/entities/product.entity';
 import { Tenant } from '../database/entities/tenant.entity';
+import { RegistrationConfig } from '../database/entities/registration-config.entity';
 import { KeycloakAdminService } from '../keycloak/keycloak-admin.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { AuditService } from '../audit/audit.service';
@@ -26,6 +27,8 @@ export class ProductsService {
     private readonly productRepo: Repository<Product>,
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
+    @InjectRepository(RegistrationConfig)
+    private readonly regConfigRepo: Repository<RegistrationConfig>,
     private readonly keycloak: KeycloakAdminService,
     private readonly gateway: GatewayService,
     private readonly audit: AuditService,
@@ -106,7 +109,65 @@ export class ProductsService {
         this.logger.warn(`Could not configure organization scope: ${(err as Error).message}`);
       }
 
-      // 6. Create APISIX route
+      // 6a. Create permissions (simple client roles)
+      if (dto.permissions && dto.permissions.length > 0) {
+        for (const perm of dto.permissions) {
+          try {
+            await this.keycloak.createClientRole(publicClientUuid, {
+              name: perm.name,
+              description: perm.description,
+            });
+          } catch (err) {
+            this.logger.warn(`Could not create permission '${perm.name}': ${(err as Error).message}`);
+          }
+        }
+      }
+
+      // 6b. Create roles (composite client roles) and link permissions
+      if (dto.roles && dto.roles.length > 0) {
+        for (const role of dto.roles) {
+          try {
+            await this.keycloak.createClientRole(publicClientUuid, {
+              name: role.name,
+              description: role.description,
+              composite: true,
+            });
+          } catch (err) {
+            this.logger.warn(`Could not create role '${role.name}': ${(err as Error).message}`);
+            continue;
+          }
+          // Link permissions to this role as composites
+          if (role.permissions && role.permissions.length > 0) {
+            try {
+              const allClientRoles = await this.keycloak.getClientRoles(publicClientUuid);
+              const permRoles = allClientRoles.filter((r) => role.permissions.includes(r.name));
+              if (permRoles.length > 0) {
+                await this.keycloak.addCompositeRoles(
+                  publicClientUuid,
+                  role.name,
+                  permRoles.map((r) => ({ id: r.id, name: r.name })),
+                );
+              }
+            } catch (err) {
+              this.logger.warn(`Could not add composites to role '${role.name}': ${(err as Error).message}`);
+            }
+          }
+        }
+      }
+
+      // 6c. Add all client roles to scope mappings so they appear in tokens
+      if ((dto.permissions && dto.permissions.length > 0) || (dto.roles && dto.roles.length > 0)) {
+        const allRoles = await this.keycloak.getClientRoles(publicClientUuid);
+        if (allRoles.length > 0) {
+          await this.keycloak.addClientRoleScopeMappings(
+            publicClientUuid,
+            publicClientUuid,
+            allRoles.map((r) => ({ id: r.id, name: r.name })),
+          );
+        }
+      }
+
+      // Create APISIX route
       let apisixRouteId: string | undefined;
       if (dto.backendUrl && dto.backendPort) {
         try {
@@ -145,7 +206,23 @@ export class ProductsService {
         }),
       );
 
-      // 8. Audit log
+      // 8. Create registration config for self-registration
+      try {
+        await this.regConfigRepo.save(
+          this.regConfigRepo.create({
+            product: dto.slug,
+            requiredFields: ['email', 'fullName', 'phone', 'password'],
+            validationRules: { password: { minLength: 8 } },
+            defaultRealmRole: 'end_user',
+            defaultClientRoles: dto.defaultRole ? [dto.defaultRole] : [],
+            selfRegistrationEnabled: true,
+          }),
+        );
+      } catch (err) {
+        this.logger.warn(`Could not create registration config: ${(err as Error).message}`);
+      }
+
+      // 9. Audit log
       await this.audit.log({
         actorId: actor.id,
         actorType: ActorType.USER,

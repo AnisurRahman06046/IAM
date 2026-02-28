@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductDto {
@@ -40,4 +40,33 @@ export class CreateProductDto {
   @Min(1)
   @Max(65535)
   backendPort?: number;
+
+  @ApiPropertyOptional({
+    example: [
+      { name: 'create_application', description: 'Submit new visa applications' },
+      { name: 'view_application', description: 'View visa applications' },
+      { name: 'process_application', description: 'Process visa applications' },
+      { name: 'approve_application', description: 'Approve or reject applications' },
+    ],
+    description: 'Granular permissions (simple client roles)',
+  })
+  @IsOptional()
+  @IsArray()
+  permissions?: { name: string; description?: string }[];
+
+  @ApiPropertyOptional({
+    example: [
+      { name: 'admin', description: 'Full access', permissions: ['create_application', 'view_application', 'process_application', 'approve_application'] },
+      { name: 'employee', description: 'Can create and view', permissions: ['create_application', 'view_application'] },
+    ],
+    description: 'Roles (composite client roles) — each bundles a set of permissions',
+  })
+  @IsOptional()
+  @IsArray()
+  roles?: { name: string; description?: string; permissions: string[] }[];
+
+  @ApiPropertyOptional({ example: 'employee', description: 'Default role auto-assigned on self-registration' })
+  @IsOptional()
+  @IsString()
+  defaultRole?: string;
 }

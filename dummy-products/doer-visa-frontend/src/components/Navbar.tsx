@@ -4,6 +4,7 @@ import { useAuth } from "../auth/auth-context";
 const navLinks = [
   { key: "dashboard", label: "Dashboard" },
   { key: "applications", label: "Applications" },
+  { key: "users", label: "Users", adminOnly: true },
   { key: "profile", label: "Profile" },
 ];
 
@@ -61,12 +62,16 @@ const styles: Record<string, React.CSSProperties> = {
 export function Navbar() {
   const { user, logout, refresh } = useAuth();
   const active = getActiveRoute();
+  const isAdmin = user?.realm_access?.roles?.includes("tenant_admin") ||
+    user?.resource_access?.["doer-visa"]?.roles?.includes("manage_all");
+
+  const visibleLinks = navLinks.filter((link) => !(link as any).adminOnly || isAdmin);
 
   return (
     <nav style={styles.nav}>
       <div style={styles.left}>
         <span style={styles.brand}>Doer Visa</span>
-        {navLinks.map((link) => (
+        {visibleLinks.map((link) => (
           <a
             key={link.key}
             href={`#/${link.key}`}

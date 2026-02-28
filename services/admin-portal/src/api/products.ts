@@ -24,6 +24,9 @@ export interface CreateProductPayload {
   frontendUrl?: string;
   backendUrl?: string;
   backendPort?: number;
+  permissions?: { name: string; description?: string }[];
+  roles?: { name: string; description?: string; permissions: string[] }[];
+  defaultRole?: string;
 }
 
 export interface UpdateProductPayload {

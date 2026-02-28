@@ -194,15 +194,22 @@ function RolesTab({
   onRefresh: () => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
+  const [createType, setCreateType] = useState<"permission" | "role">("permission");
   const [showComposites, setShowComposites] = useState<string | null>(null);
   const [composites, setComposites] = useState<ClientRole[]>([]);
   const [form] = Form.useForm();
   const [compositeForm] = Form.useForm();
 
+  const permissionsList = roles.filter((r) => !r.composite);
+  const rolesList = roles.filter((r) => r.composite);
+
   const handleCreate = async (values: { name: string; description?: string }) => {
     try {
-      await productsApi.createRole(productId, values);
-      message.success(`Role "${values.name}" created`);
+      await productsApi.createRole(productId, {
+        ...values,
+        composite: createType === "role",
+      });
+      message.success(`${createType === "role" ? "Role" : "Permission"} "${values.name}" created`);
       setShowCreate(false);
       form.resetFields();
       onRefresh();
@@ -214,7 +221,7 @@ function RolesTab({
   const handleDelete = async (roleName: string) => {
     try {
       await productsApi.deleteRole(productId, roleName);
-      message.success(`Role "${roleName}" deleted`);
+      message.success(`"${roleName}" deleted`);
       onRefresh();
     } catch (err: unknown) {
       message.error((err as Error).message);
@@ -235,38 +242,42 @@ function RolesTab({
     if (!showComposites) return;
     try {
       await productsApi.addComposites(productId, showComposites, values.roleNames);
-      message.success("Composites added");
+      message.success("Permissions added to role");
       compositeForm.resetFields();
       openComposites(showComposites);
+      onRefresh();
     } catch (err: unknown) {
       message.error((err as Error).message);
     }
   };
 
-  const columns = [
-    { title: "Name", dataIndex: "name", key: "name" },
+  const permColumns = [
+    { title: "Permission", dataIndex: "name", key: "name", render: (v: string) => <Tag color="green">{v}</Tag> },
     { title: "Description", dataIndex: "description", key: "description", render: (v: string) => v || "-" },
-    {
-      title: "Composite",
-      dataIndex: "composite",
-      key: "composite",
-      render: (v: boolean) => (v ? <Tag color="blue">composite</Tag> : null),
-    },
     {
       title: "Actions",
       key: "actions",
+      width: 100,
+      render: (_: unknown, record: ClientRole) => (
+        <Popconfirm title={`Delete "${record.name}"?`} onConfirm={() => handleDelete(record.name)}>
+          <Button size="small" danger>Delete</Button>
+        </Popconfirm>
+      ),
+    },
+  ];
+
+  const roleColumns = [
+    { title: "Role", dataIndex: "name", key: "name", render: (v: string) => <Tag color="blue">{v}</Tag> },
+    { title: "Description", dataIndex: "description", key: "description", render: (v: string) => v || "-" },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 200,
       render: (_: unknown, record: ClientRole) => (
         <Space>
-          <Button size="small" onClick={() => openComposites(record.name)}>
-            Composites
-          </Button>
-          <Popconfirm
-            title={`Delete role "${record.name}"?`}
-            onConfirm={() => handleDelete(record.name)}
-          >
-            <Button size="small" danger>
-              Delete
-            </Button>
+          <Button size="small" onClick={() => openComposites(record.name)}>Permissions</Button>
+          <Popconfirm title={`Delete role "${record.name}"?`} onConfirm={() => handleDelete(record.name)}>
+            <Button size="small" danger>Delete</Button>
           </Popconfirm>
         </Space>
       ),
@@ -275,30 +286,49 @@ function RolesTab({
 
   return (
     <>
-      <Button
-        type="primary"
-        style={{ marginBottom: 16 }}
-        onClick={() => setShowCreate(true)}
-      >
-        Add Role
-      </Button>
+      <Space style={{ marginBottom: 16 }}>
+        <Button onClick={() => { setCreateType("permission"); setShowCreate(true); }}>
+          + Permission
+        </Button>
+        <Button type="primary" onClick={() => { setCreateType("role"); setShowCreate(true); }}>
+          + Role
+        </Button>
+      </Space>
+
+      <Title level={5} style={{ marginTop: 8 }}>Permissions ({permissionsList.length})</Title>
+      <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+        Granular capabilities — assigned to roles, not directly to users.
+      </Text>
       <Table
-        dataSource={roles}
-        columns={columns}
+        dataSource={permissionsList}
+        columns={permColumns}
+        rowKey="name"
+        pagination={false}
+        size="small"
+        style={{ marginBottom: 24 }}
+      />
+
+      <Title level={5}>Roles ({rolesList.length})</Title>
+      <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+        Groups of permissions — assigned to users.
+      </Text>
+      <Table
+        dataSource={rolesList}
+        columns={roleColumns}
         rowKey="name"
         pagination={false}
         size="small"
       />
 
       <Modal
-        title="Create Client Role"
+        title={createType === "role" ? "Create Role" : "Create Permission"}
         open={showCreate}
         onCancel={() => setShowCreate(false)}
         onOk={() => form.submit()}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="name" label="Role Name" rules={[{ required: true }]}>
-            <Input placeholder="e.g. manage_students" />
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+            <Input placeholder={createType === "role" ? "e.g. supervisor" : "e.g. approve_application"} />
           </Form.Item>
           <Form.Item name="description" label="Description">
             <Input placeholder="Optional description" />
@@ -307,37 +337,35 @@ function RolesTab({
       </Modal>
 
       <Modal
-        title={`Composites for "${showComposites}"`}
+        title={`Permissions in role "${showComposites}"`}
         open={!!showComposites}
         onCancel={() => setShowComposites(null)}
         footer={null}
         width={600}
       >
-        <Title level={5}>Current Composites</Title>
+        <Title level={5}>Current Permissions</Title>
         {composites.length === 0 ? (
-          <Text type="secondary">No composites</Text>
+          <Text type="secondary">No permissions assigned</Text>
         ) : (
           <Space wrap style={{ marginBottom: 16 }}>
             {composites.map((c) => (
-              <Tag key={c.name}>{c.name}</Tag>
+              <Tag key={c.name} color="green">{c.name}</Tag>
             ))}
           </Space>
         )}
-        <Title level={5}>Add Composites</Title>
+        <Title level={5}>Add Permissions</Title>
         <Form form={compositeForm} layout="inline" onFinish={handleAddComposites}>
           <Form.Item name="roleNames" style={{ flex: 1 }}>
             <Select
               mode="multiple"
-              placeholder="Select roles"
-              options={roles
-                .filter((r) => r.name !== showComposites)
-                .map((r) => ({ label: r.name, value: r.name }))}
+              placeholder="Select permissions to add"
+              options={permissionsList
+                .filter((p) => !composites.find((c) => c.name === p.name))
+                .map((p) => ({ label: p.name, value: p.name }))}
             />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit">
-              Add
-            </Button>
+            <Button type="primary" htmlType="submit">Add</Button>
           </Form.Item>
         </Form>
       </Modal>

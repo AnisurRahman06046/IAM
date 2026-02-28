@@ -340,7 +340,7 @@ export class KeycloakAdminService implements OnModuleInit {
     }
   }
 
-  async getClientRoles(clientUuid: string): Promise<{ id: string; name: string; description?: string }[]> {
+  async getClientRoles(clientUuid: string): Promise<{ id: string; name: string; description?: string; composite?: boolean }[]> {
     try {
       const headers = await this.adminHeaders();
       const { data } = await firstValueFrom(
