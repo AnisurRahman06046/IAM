@@ -1,6 +1,6 @@
-# Doer IAM — Centralized Identity & Access Management
+# Central IAM — Centralized Identity & Access Management
 
-A production-grade, multi-tenant Identity and Access Management system built for the **Doer** product ecosystem. Provides centralized authentication, authorization, tenant management, and product onboarding — all from a single platform.
+A production-grade, multi-tenant Identity and Access Management system designed for **any multi-product SaaS company**. Provides centralized authentication, authorization, tenant management, and automated product onboarding — all from a single platform.
 
 **Author:** Md Anisur Rahman
 [GitHub](https://github.com/AnisurRahman06046) | [LinkedIn](https://www.linkedin.com/in/md-anisur-rahman046) | [Email](mailto:anisurrahman06046@gmail.com)
@@ -22,15 +22,16 @@ A production-grade, multi-tenant Identity and Access Management system built for
 - [Frontend Applications](#frontend-applications)
 - [Release Notes](#release-notes)
 - [Documentation](#documentation)
+- [Author](#author)
 - [License](#license)
 
 ---
 
 ## Overview
 
-Doer IAM is a **B2B2C multi-tenant** identity platform that allows the Doer company to manage multiple products (Visa, School, HRMS, etc.) under a single authentication umbrella. It handles:
+Central IAM is a **B2B2C multi-tenant** identity platform that allows any organization to manage multiple products under a single authentication umbrella. Whether you're running an ERP, CRM, LMS, or any SaaS product suite — this system provides the identity backbone. It handles:
 
-- **Single Sign-On (SSO)** across all Doer products
+- **Single Sign-On (SSO)** across all registered products
 - **Multi-tenancy** with organization-based isolation
 - **Role-Based Access Control (RBAC)** at both platform and product levels
 - **Automated product onboarding** — register a new product and get Keycloak clients, API gateway routes, and RBAC configured in one step
@@ -38,10 +39,10 @@ Doer IAM is a **B2B2C multi-tenant** identity platform that allows the Doer comp
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        DOER PLATFORM                            │
+│                      YOUR PLATFORM                              │
 │                                                                 │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
-│  │doer-visa │  │doer-school│  │doer-hrms │  │  future  │       │
+│  │Product A │  │Product B │  │Product C │  │  future  │       │
 │  │ frontend │  │ frontend  │  │ frontend │  │ products │       │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
 │       │              │              │              │             │
@@ -96,7 +97,7 @@ Products never handle credentials. APISIX validates JWTs and injects user contex
 
 ### Authentication & SSO
 - Authorization Code + PKCE flow (ROPC disabled for security)
-- Single Sign-On across all Doer products
+- Single Sign-On across all registered products
 - Token exchange, refresh, and revocation
 - Password reset via OTP
 - Invitation-based onboarding with token validation
@@ -111,7 +112,7 @@ Products never handle credentials. APISIX validates JWTs and injects user contex
 
 ### Role-Based Access Control
 - **4 realm roles**: `platform_admin`, `tenant_admin`, `tenant_employee`, `end_user`
-- **Per-product client roles**: Fully customizable (e.g., `manage_applications`, `process_visa`)
+- **Per-product client roles**: Fully customizable (e.g., `manage_orders`, `approve_requests`)
 - **Composite roles**: Group multiple roles under a single parent role
 - Scope mappings ensure only relevant roles appear in tokens
 - Global `RolesGuard` + per-route `TenantScopeGuard`
@@ -258,13 +259,13 @@ Browser                     Keycloak                  APISIX               Produ
 
 Product APIs never parse JWTs. They read pre-validated headers set by APISIX:
 
-```
+```javascript
 // Express.js example
-app.get('/api/visa/applications', (req, res) => {
+app.get('/api/myproduct/resource', (req, res) => {
   const userId     = req.headers['x-user-id'];
   const email      = req.headers['x-user-email'];
   const roles      = req.headers['x-user-roles'];       // "tenant_admin,end_user"
-  const clientRoles= req.headers['x-client-roles'];     // "manage_applications,process_visa"
+  const clientRoles= req.headers['x-client-roles'];     // "manage_orders,approve_requests"
   const orgId      = req.headers['x-organization-id'];   // "acme-corp"
 
   // Apply business logic using these headers — zero JWT code needed
@@ -319,13 +320,13 @@ IAM/
 │           ├── pages/           # Dashboard, Products, Tenants, Audit
 │           └── layouts/         # Admin layout with sidebar
 │
-├── dummy-products/
+├── dummy-products/              # Reference implementation for integration
 │   ├── doer-visa-api/           # Sample Express backend (port 4001)
 │   ├── doer-visa-frontend/      # Sample React frontend (port 5173)
 │   └── e2e-test.sh             # 13 E2E integration tests
 │
 ├── themes/
-│   └── keycloakify/             # Login page themes (doer-visa, doer-admin variants)
+│   └── keycloakify/             # Login page themes (customizable per product)
 │
 ├── config/
 │   ├── apisix/                  # APISIX config + route setup script
@@ -415,13 +416,13 @@ npm run dev
 | Admin Portal | 3002 | Platform administration UI |
 | APISIX Gateway | 9080 | API gateway (all product traffic) |
 | APISIX Admin | 9092 | Gateway management API |
-| PostgreSQL | 5432 | Database (keycloak + doer_auth) |
+| PostgreSQL | 5432 | Database |
 | Redis | 6379 | Cache, OTP storage |
 | etcd | 2379 | APISIX configuration store |
 | Prometheus | 9090 | Metrics collection |
 | Grafana | 3000 | Monitoring dashboards |
-| doer-visa-api | 4001 | Sample product backend |
-| doer-visa-frontend | 5173 | Sample product frontend |
+| Sample Product API | 4001 | Reference product backend |
+| Sample Product UI | 5173 | Reference product frontend |
 
 ---
 
@@ -434,6 +435,8 @@ npm run dev
 | PostgreSQL (Auth Service) | `doer_auth_user` | `doer_auth_pass` |
 | Redis | — | `doer_redis_2026` |
 | Grafana | `admin` | `admin` |
+
+> These are development defaults. Change all credentials before deploying to production.
 
 ---
 
@@ -517,7 +520,7 @@ All protected endpoints require a Bearer token. Responses follow the format:
 | Application | Local URL | Purpose |
 |-------------|-----------|---------|
 | Admin Portal | http://localhost:3002 | Platform administration |
-| doer-visa Frontend | http://localhost:5173 | Sample product (Visa processing) |
+| Sample Product Frontend | http://localhost:5173 | Reference product implementation |
 | Keycloak Account | http://localhost:8080/realms/doer/account | User self-service |
 | Swagger API Docs | http://localhost:3001/api/docs | Interactive API documentation |
 | Grafana Dashboards | http://localhost:3000 | Monitoring and metrics |
@@ -529,7 +532,7 @@ All protected endpoints require a Bearer token. Responses follow the format:
 
 ### v1.0.0 — Initial Release (February 2026)
 
-The first complete release of the Doer IAM platform, delivering a fully functional centralized identity and access management system across 8 implementation phases.
+The first complete release of Central IAM, delivering a fully functional centralized identity and access management system across 8 implementation phases.
 
 #### Phase 1: Infrastructure Foundation
 - PostgreSQL setup with dedicated databases for Keycloak and Auth Service
@@ -538,9 +541,9 @@ The first complete release of the Doer IAM platform, delivering a fully function
 - APISIX configured with `network_mode: host` to reach host-bound services
 
 #### Phase 2: Keycloak Realm Configuration
-- `doer` realm with Organizations feature enabled
+- Realm with Organizations feature enabled
 - 4 realm roles: `platform_admin`, `tenant_admin`, `tenant_employee`, `end_user`
-- Client configurations: `doer-visa` (public/PKCE), `doer-visa-backend` (confidential), `doer-auth-svc` (service account), `doer-admin` (public/PKCE)
+- Multiple client configurations: public/PKCE clients, confidential backend clients, service account client, admin client
 - Product-specific client roles with composite role support
 - Scope mappings for token claim control (`fullScopeAllowed=false`)
 - Organization scope moved to default scopes for automatic JWT inclusion
@@ -548,7 +551,7 @@ The first complete release of the Doer IAM platform, delivering a fully function
 #### Phase 3: Auth Service Development
 - NestJS 11 + TypeORM backend with 6 modules (Auth, Tenants, Users, Platform, Keycloak, Audit)
 - User registration with product-specific strategies
-- Token exchange (PKCE code → JWT), refresh, and revocation
+- Token exchange (PKCE code to JWT), refresh, and revocation
 - Password reset via OTP with Redis-backed storage
 - Invitation system with expiring tokens
 - Tenant CRUD with Keycloak Organization sync
@@ -568,17 +571,17 @@ The first complete release of the Doer IAM platform, delivering a fully function
 
 #### Phase 5: Keycloakify Theme Development
 - Custom login page themes using Keycloakify v11 + React
-- Two variants: `doer-visa` (teal branding) and `doer-admin` (dark blue branding)
-- Single JAR deployment with both theme variants
-- Automated build + deploy via `scripts/deploy-theme.sh`
+- Multiple theme variants with per-product branding
+- Single JAR deployment with all theme variants
+- Automated build + deploy script
 - Per-client theme assignment through Keycloak client attributes
 
-#### Phase 6: First Product Integration (doer-visa)
-- **doer-visa-api**: Express + TypeScript backend with zero JWT logic
+#### Phase 6: First Product Integration (Sample Product)
+- **Sample API**: Express + TypeScript backend with zero JWT logic
   - Reads APISIX-injected headers for user context
   - Role-based middleware using `X-Client-Roles` header
-  - CRUD for visa applications with organization scoping
-- **doer-visa-frontend**: React + Vite SPA with PKCE authentication
+  - CRUD operations with organization scoping
+- **Sample Frontend**: React + Vite SPA with PKCE authentication
   - Authorization Code + PKCE flow with Keycloak
   - Hash-based routing for static deployment compatibility
   - Role-aware UI rendering
@@ -647,7 +650,7 @@ The first complete release of the Doer IAM platform, delivering a fully function
 
 ## Author
 
-**Md Anisur Rahman**
+**Md Anisur Rahman** — System Architect & Developer
 
 - GitHub: [AnisurRahman06046](https://github.com/AnisurRahman06046)
 - LinkedIn: [md-anisur-rahman046](https://www.linkedin.com/in/md-anisur-rahman046)
@@ -657,4 +660,24 @@ The first complete release of the Doer IAM platform, delivering a fully function
 
 ## License
 
-Proprietary — Doer Company. All rights reserved.
+MIT License
+
+Copyright (c) 2026 Md Anisur Rahman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
